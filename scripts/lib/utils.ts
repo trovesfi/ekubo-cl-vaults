@@ -49,7 +49,7 @@ export function getAccount(accountKey: string, fileName = 'accounts-orig.json', 
 //     //  process.env.ACCOUNT_ADDRESS
 // }
 
-export async function myDeclare(contract_name: string, package_name: string = 'strkfarm_contracts') {
+export async function myDeclare(contract_name: string, package_name: string = 'troves_clvaults') {
     const provider = getRpcProvider();
     const acc = getAccount(ACCOUNT_NAME);
     const compiledSierra = json.parse(

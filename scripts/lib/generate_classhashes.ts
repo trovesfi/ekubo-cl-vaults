@@ -2,7 +2,7 @@ import { extractContractHashes, json } from "starknet";
 import { getRpcProvider } from "./utils";
 import { readFileSync, writeFileSync } from "fs";
 
-function getClassHash(contract_name: string, package_name: "strkfarm_contracts") {
+function getClassHash(contract_name: string, package_name: "troves_clvaults") {
     const compiledSierra = json.parse(
         readFileSync(`./target/release/${package_name}_${contract_name}.contract_class.json`).toString("ascii")
     )
@@ -28,7 +28,7 @@ async function main() {
     ];
 
     const classHashes = contracts.map(contract => ({
-        classhash: getClassHash(contract, 'strkfarm_contracts'),
+        classhash: getClassHash(contract, 'troves_clvaults'),
         contract_name: contract
     }));
     console.log(classHashes);
