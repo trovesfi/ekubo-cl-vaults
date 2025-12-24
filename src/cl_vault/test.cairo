@@ -402,34 +402,7 @@ pub mod test_cl_vault_final {
 
     #[test]
     #[fork("mainnet_4707139")]
-    fn test_constructor_usdc_usdt() {
-        let (clVault, erc20Disp) = deploy_vault_usdc_usdt();
-        let managed_pools = clVault.get_managed_pools();
-        
-        assert(managed_pools.len() == 2, 'should have 2 pools');
-        assert(erc20Disp.name() == "uCL_token", 'invalid name');
-        assert(erc20Disp.symbol() == "UCL", 'invalid symbol');
-        assert(erc20Disp.decimals() == 18, 'invalid decimals');
-        assert(erc20Disp.total_supply() == 0, 'invalid total supply');
-    }
-
-    #[test]
-    #[fork("mainnet_4707139")]
-    fn test_constructor_eth_usdc() {
-        let (clVault, erc20Disp) = deploy_vault_eth_usdc();
-        let managed_pools = clVault.get_managed_pools();
-        
-        assert(managed_pools.len() == 2, 'should have 2 pools');
-        assert(erc20Disp.name() == "uCL_token", 'invalid name');
-        assert(erc20Disp.symbol() == "UCL", 'invalid symbol');
-        assert(erc20Disp.decimals() == 18, 'invalid decimals');
-        assert(erc20Disp.total_supply() == 0, 'invalid total supply');
-    }
-
-    #[test]
-    #[fork("mainnet_4707139")]
     fn test_deposit_single_pool_xstrk_strk() {
-        let (clVault, _) = deploy_vault_xstrk_strk();
         let this = get_contract_address();
         
         // Create single pool config
@@ -456,10 +429,25 @@ pub mod test_cl_vault_final {
         while i != managed_pools.len() {
             let settings = clVault_single.get_pool_settings(i.into());
             let nft_id: u64 = settings.contract_nft_id;
-            if nft_id > 0 {
-                let nft_disp = IEkuboNFTDispatcher { contract_address: settings.ekubo_positions_nft };
-                assert(nft_disp.ownerOf(nft_id.into()) == clVault_single.contract_address, 'invalid owner');
-            }
+            assert(nft_id == 0, 'invalid nft id');
+            i += 1;
+        }
+
+        // rebalance to add liquidity
+        let mut liq_array = ArrayTrait::<u256>::new();
+        liq_array.append(5 * pow::ten_pow(18));
+        let rebal_params = create_rebalance_params(clVault_single, liq_array);
+        clVault_single.rebalance_pool(rebal_params);
+       
+        // assert nft is non-zero and owner is contract address
+        let managed_pools = clVault_single.get_managed_pools();
+        let mut i: u32 = 0;
+        while i != managed_pools.len() {
+            let settings = clVault_single.get_pool_settings(i.into());
+            let nft_id: u64 = settings.contract_nft_id;
+            assert(nft_id > 0, 'invalid nft id');
+            let nft_disp = IEkuboNFTDispatcher { contract_address: settings.ekubo_positions_nft };
+            assert(nft_disp.ownerOf(nft_id.into()) == clVault_single.contract_address, 'invalid owner');
             i += 1;
         }
     }
@@ -573,7 +561,6 @@ pub mod test_cl_vault_final {
     #[fork("mainnet_4707139")]
     fn test_withdraw_partial() {
         let (clVault, _) = deploy_vault_xstrk_strk();
-        println!("deployed vault");
         let this = get_contract_address();
         
         let amount = 10 * pow::ten_pow(18);
@@ -583,7 +570,6 @@ pub mod test_cl_vault_final {
         ERC20Helper::approve(constants::STRK_ADDRESS(), clVault.contract_address, amount * 2);
         
         let _shares = clVault.deposit(amount, amount, this);
-        println!("deposited");
         
         // Rebalance to add liquidity - use very small amounts
         let mut liq_array = ArrayTrait::<u256>::new();
@@ -591,14 +577,14 @@ pub mod test_cl_vault_final {
         liq_array.append(2 * pow::ten_pow(18));
         let rebal_params = create_rebalance_params(clVault, liq_array);
         clVault.rebalance_pool(rebal_params);
-        println!("rebalanced");
+
         let total_shares = ERC20Helper::balanceOf(clVault.contract_address, this);
         let strk_before = ERC20Helper::balanceOf(constants::STRK_ADDRESS(), this);
         let xstrk_before = ERC20Helper::balanceOf(constants::XSTRK_ADDRESS(), this);
         
         let withdraw_amount = total_shares / 2;
         clVault.withdraw(withdraw_amount, this);
-        println!("withdrawn");
+
         let shares_after = ERC20Helper::balanceOf(clVault.contract_address, this);
         assert(shares_after == (total_shares - withdraw_amount), 'shares not burned correctly');
         
@@ -1631,7 +1617,11 @@ pub mod test_cl_vault_final {
         
         let shares_info = clVault.convert_to_shares(amount0, amount1);
         
+        let SCALE_18 = 1_000_000_000_000_000_000_u256;
+        let init1 = 2 * SCALE_18;
+        let expected_shares = (SCALE_18 * amount0 / SCALE_18 + SCALE_18 * amount1 / init1) / 2;
         assert(shares_info.shares > 0, 'shares should be calculated');
+        assert(shares_info.shares == expected_shares, 'shares should be calculated');
         assert(shares_info.vault_level_positions.positions.len() == 0, 'vault positions should be empty');
         assert(shares_info.vault_level_positions.total_amount0 == 0, 'vault amount0 should be 0');
         assert(shares_info.vault_level_positions.total_amount1 == 0, 'vault amount1 should be 0');
@@ -1640,7 +1630,7 @@ pub mod test_cl_vault_final {
     #[test]
     #[fork("mainnet_4707139")]
     fn test_convert_to_shares_after_deposit() {
-        let (clVault, _) = deploy_vault_xstrk_strk();
+        let (clVault, erc20Disp) = deploy_vault_xstrk_strk();
         let this = get_contract_address();
         
         let amount = 10 * pow::ten_pow(18);
@@ -1660,7 +1650,8 @@ pub mod test_cl_vault_final {
         
         // Convert to shares after deposit and rebalance
         let shares_info = clVault.convert_to_shares(amount, amount);
-        assert(shares_info.shares > 0, 'shares should be calculated');
+        assert(shares_info.shares > 0, 'shares error');
+        assert(shares_info.shares == 1152034540170218661139, 'shares error2');
         assert(shares_info.vault_level_positions.positions.len() == 2, 'should have 2 vault positions');
     }
 

@@ -529,7 +529,6 @@ mod ConcLiquidityVault {
                 );
                 i += 1;
             }
-            println!("pool keys match");
 
             i = 0;
             while i != self.managed_pools.len() {
@@ -551,12 +550,12 @@ mod ConcLiquidityVault {
                 self._withdraw_position(liq_to_withdraw, i);
                 i += 1;
             }
-            println!("withdrawn liquidity");
+            
             // swap
             if rebalance_params.swap_params.token_from_amount > 0 {
                 rebalance_params.swap_params.swap(self._get_oracle_dispatcher());
             }
-            println!("swapped");
+
             // mint liquidity
             i = 0;
             let this = get_contract_address();
@@ -598,7 +597,7 @@ mod ConcLiquidityVault {
 
                 i += 1;
             }
-            println!("minted liquidity");
+
             // Check unused token balances if thresholds are set in config
             let max_unused_balances = self.max_unused_balances_on_rebalance.read();
             if (max_unused_balances.token0 > 0 || max_unused_balances.token1 > 0) {
@@ -1176,12 +1175,6 @@ mod ConcLiquidityVault {
                 } else { 0 };
                 let liquidity_delta0 = self.get_liquidity_delta(i, deposit_amt0, deposit_amt1);
 
-                // let liquidity_ratio = liquidity_delta0.into() * 10000 / range_liq;
-                // let amount0_ratio = deposit_amt0 * 10000 / range_amt0;
-                // let amount1_ratio = deposit_amt1 * 10000 / range_amt1;
-                // println!("liquidity_ratio {:?}", liquidity_ratio);
-                // println!("amount0_ratio {:?}", amount0_ratio);
-                // println!("amount1_ratio {:?}", amount1_ratio);
                 // actual deposit amounts
                 let (user_actual_deposit0, user_actual_deposit1) = self.get_amount_delta(i, liquidity_delta0.into());
                 user_total_amount0 += user_actual_deposit0;
