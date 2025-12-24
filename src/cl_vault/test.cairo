@@ -375,7 +375,7 @@ pub mod test_cl_vault_final {
     // ============================================================================
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_constructor_xstrk_strk() {
         let (clVault, erc20Disp) = deploy_vault_xstrk_strk();
         let managed_pools = clVault.get_managed_pools();
@@ -401,7 +401,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_constructor_usdc_usdt() {
         let (clVault, erc20Disp) = deploy_vault_usdc_usdt();
         let managed_pools = clVault.get_managed_pools();
@@ -414,7 +414,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_constructor_eth_usdc() {
         let (clVault, erc20Disp) = deploy_vault_eth_usdc();
         let managed_pools = clVault.get_managed_pools();
@@ -427,7 +427,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_deposit_single_pool_xstrk_strk() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let this = get_contract_address();
@@ -465,7 +465,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_deposit_single_pool_usdc_usdt() {
         let single_pool = create_single_pool_config(
             get_pool_key_usdc_usdt_1(),
@@ -488,7 +488,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_deposit_single_pool_eth_usdc() {
         let single_pool = create_single_pool_config(
             get_pool_key_eth_usdc_1(),
@@ -512,7 +512,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_deposit_two_pools_diff_keys() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let this = get_contract_address();
@@ -546,7 +546,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_deposit_two_pools_diff_bounds() {
         let pools = create_two_pools_diff_bounds(
             get_pool_key_xstrk_strk_1(),
@@ -570,7 +570,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_withdraw_partial() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         println!("deployed vault");
@@ -609,7 +609,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_withdraw_full() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let this = get_contract_address();
@@ -639,7 +639,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_withdraw_after_rebalance() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let this = get_contract_address();
@@ -673,7 +673,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_rebalance_single_pool() {
         let single_pool = create_single_pool_config(
             get_pool_key_xstrk_strk_1(),
@@ -717,7 +717,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_rebalance_multiple_pools() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let this = get_contract_address();
@@ -745,7 +745,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_rebalance_change_bounds() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let this = get_contract_address();
@@ -805,7 +805,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     #[should_panic(expected: "Rebalance: excessive unused token0")]
     fn test_rebalance_excessive_unused_token0() {
         let (clVault, _) = deploy_vault_xstrk_strk();
@@ -841,7 +841,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     #[should_panic(expected: "Rebalance: excessive unused token1")]
     fn test_rebalance_excessive_unused_token1() {
         let (clVault, _) = deploy_vault_xstrk_strk();
@@ -881,7 +881,7 @@ pub mod test_cl_vault_final {
     // ============================================================================
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_add_pool_after_deployment() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let pools_before = clVault.get_managed_pools();
@@ -900,7 +900,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_add_pool_deposit_rebalance() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let this = get_contract_address();
@@ -937,7 +937,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     #[should_panic(expected: ('invalid token pair',))]
     fn test_add_pool_invalid_token_pair() {
         let (clVault, _) = deploy_vault_xstrk_strk();
@@ -952,7 +952,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     #[should_panic(expected: ('pool already exists',))]
     fn test_add_pool_duplicate() {
         let (clVault, _) = deploy_vault_xstrk_strk();
@@ -967,7 +967,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_remove_pool_after_draining() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let this = get_contract_address();
@@ -1030,7 +1030,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     #[should_panic(expected: ('liquidity must be zero',))]
     fn test_remove_pool_with_liquidity() {
         let (clVault, _) = deploy_vault_xstrk_strk();
@@ -1056,7 +1056,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_three_pools_operations() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let this = get_contract_address();
@@ -1120,7 +1120,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_add_remove_add_cycle() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let this = get_contract_address();
@@ -1186,7 +1186,7 @@ pub mod test_cl_vault_final {
     // ============================================================================
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_set_settings_governor_only() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         
@@ -1203,7 +1203,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     #[should_panic(expected: ('Access: Missing governor role',))]
     fn test_set_settings_unauthorized() {
         let (clVault, _) = deploy_vault_xstrk_strk();
@@ -1219,7 +1219,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_add_pool_governor_only() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         
@@ -1235,7 +1235,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     #[should_panic(expected: ('Access: Missing governor role',))]
     fn test_add_pool_unauthorized() {
         let (clVault, _) = deploy_vault_xstrk_strk();
@@ -1250,7 +1250,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_remove_pool_governor_only() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let this = get_contract_address();
@@ -1309,7 +1309,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     #[should_panic(expected: ('Access: Missing governor role',))]
     fn test_remove_pool_unauthorized() {
         let (clVault, _) = deploy_vault_xstrk_strk();
@@ -1320,7 +1320,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     #[should_panic(expected: ('Access: Missing relayer role',))]
     fn test_rebalance_unauthorized() {
         let (clVault, _) = deploy_vault_xstrk_strk();
@@ -1337,7 +1337,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_deposit_anyone() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let this = get_contract_address();
@@ -1354,7 +1354,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_withdraw_anyone() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let this = get_contract_address();
@@ -1380,7 +1380,7 @@ pub mod test_cl_vault_final {
     // ============================================================================
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_pause_emergency_actor() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let common = get_common_dispatcher(clVault);
@@ -1394,7 +1394,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_unpause_emergency_actor() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let common = get_common_dispatcher(clVault);
@@ -1407,7 +1407,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     #[should_panic(expected: ('Access: Missing EA role',))]
     fn test_pause_unauthorized() {
         let (clVault, _) = deploy_vault_xstrk_strk();
@@ -1419,7 +1419,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     #[should_panic(expected: ('Pausable: paused',))]
     fn test_deposit_when_paused() {
         let (clVault, _) = deploy_vault_xstrk_strk();
@@ -1438,7 +1438,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     #[should_panic(expected: ('Pausable: paused',))]
     fn test_withdraw_when_paused() {
         let (clVault, _) = deploy_vault_xstrk_strk();
@@ -1461,7 +1461,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     #[should_panic(expected: ('Pausable: paused',))]
     fn test_handle_fees_when_paused() {
         let (clVault, _) = deploy_vault_xstrk_strk();
@@ -1472,7 +1472,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_rebalance_when_paused() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let common = get_common_dispatcher(clVault);
@@ -1503,7 +1503,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_set_settings_when_paused() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let common = get_common_dispatcher(clVault);
@@ -1523,7 +1523,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_add_pool_when_paused() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let common = get_common_dispatcher(clVault);
@@ -1546,7 +1546,7 @@ pub mod test_cl_vault_final {
     // ============================================================================
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     #[should_panic(expected: ('amounts cannot be zero',))]
     fn test_deposit_zero_amounts() {
         let (clVault, _) = deploy_vault_xstrk_strk();
@@ -1556,7 +1556,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     #[should_panic(expected: ('insufficient shares',))]
     fn test_withdraw_insufficient_shares() {
         let (clVault, _) = deploy_vault_xstrk_strk();
@@ -1575,7 +1575,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     #[should_panic(expected: ('pool_key mismatch',))]
     fn test_rebalance_invalid_pool_key() {
         let (clVault, _) = deploy_vault_xstrk_strk();
@@ -1620,7 +1620,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_convert_to_shares_zero_supply() {
         let (clVault, erc20Disp) = deploy_vault_xstrk_strk();
         
@@ -1638,7 +1638,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_convert_to_shares_after_deposit() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let this = get_contract_address();
@@ -1665,7 +1665,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_convert_to_assets() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let this = get_contract_address();
@@ -1691,7 +1691,7 @@ pub mod test_cl_vault_final {
     }
 
     #[test]
-    #[fork("mainnet_latest")]
+    #[fork("mainnet_4707139")]
     fn test_handle_fees_no_fees() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let this = get_contract_address();
