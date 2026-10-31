@@ -230,7 +230,7 @@ pub mod test_cl_vault_final {
         calldata.append(constants::EKUBO_POSITIONS().into());
         calldata.append(constants::EKUBO_POSITIONS_NFT().into());
         calldata.append(constants::EKUBO_CORE().into());
-        calldata.append(constants::ORACLE_OURS().into());
+        calldata.append(test_utils::VESU_ORACLE().into());
         fee_settings.serialize(ref calldata);
         init_values.serialize(ref calldata);
         managed_pools.serialize(ref calldata);

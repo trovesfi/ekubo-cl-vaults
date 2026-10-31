@@ -3,6 +3,7 @@ pub mod interfaces {
     pub mod IEkuboPosition;
     pub mod IEkuboPositionsNFT;
     pub mod IEkuboDistributor;
+    pub mod IVesuOracle;
 }
 
 pub mod cl_vault {

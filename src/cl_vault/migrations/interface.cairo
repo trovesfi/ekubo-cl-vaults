@@ -5,6 +5,7 @@ pub trait IMigration<TContractState> {
     fn upgrade_vault(
         ref self: TContractState,
         vault: ContractAddress,
-        new_class_hash: ClassHash
+        new_class_hash: ClassHash,
+        oracle: ContractAddress
     );
 }

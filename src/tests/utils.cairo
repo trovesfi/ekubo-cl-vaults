@@ -25,3 +25,9 @@ pub fn load_strk(user: ContractAddress) {
     ERC20Helper::transfer(constants::STRK_ADDRESS(), user, 10000 * pow::ten_pow(18));
     stop_cheat_caller_address(constants::STRK_ADDRESS());
 }
+
+/// Vesu v2 oracle on Starknet mainnet (vesuxyz/vesu-v2 deployment.json): Pragma-backed, with
+/// per-asset staleness timeout and minimum-sources checks; xSTRK uses CONVERSION_XSTRK/USD.
+pub fn VESU_ORACLE() -> ContractAddress {
+    0xfe4bfb1b353ba51eb34dff963017f94af5a5cf8bdf3dfc191c504657f3c05.try_into().unwrap()
+}

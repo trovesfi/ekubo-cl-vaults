@@ -37,9 +37,9 @@ mod ConcLiquidityVault {
         },
         components::{
             common::CommonComp,
-            swap::{AvnuMultiRouteSwap, AvnuMultiRouteSwapImpl, assert_max_slippage}
+            swap::{AvnuMultiRouteSwap, AvnuMultiRouteSwapImpl}
         },
-        interfaces::oracle::{IPriceOracleDispatcher, IPriceOracleDispatcherTrait},
+        interfaces::oracle::IPriceOracleDispatcher,
     };
     use troves_clvaults::{
         cl_vault::{
@@ -61,7 +61,8 @@ mod ConcLiquidityVault {
             },
             IEkuboDistributor::{
                 IEkuboDistributorDispatcherTrait, Claim, IEkuboDistributorDispatcher,
-            }
+            },
+            IVesuOracle::{IVesuOracleDispatcher, IVesuOracleDispatcherTrait}
         }
     };
 
@@ -145,6 +146,7 @@ mod ConcLiquidityVault {
         FeeSettings: FeeSettings,
         MaxUnusedBalances: MaxUnusedBalances,
         RebalanceSettings: RebalanceSettings,
+        OracleUpdated: OracleUpdated,
         Harvest: HarvestEvent,
         PoolUpdated: PoolUpdated,
         EkuboPositionUpdated: EkuboPositionUpdated,
@@ -193,6 +195,11 @@ mod ConcLiquidityVault {
         self.rebalance_settings.write(default_rebalance_settings());
     }
 
+    #[derive(Drop, starknet::Event)]
+    struct OracleUpdated {
+        oracle: ContractAddress,
+    }
+
     fn default_rebalance_settings() -> RebalanceSettings {
         RebalanceSettings {
             max_slippage_bps: 100, // 1%
@@ -202,6 +209,14 @@ mod ConcLiquidityVault {
             max_swap_amount0: core::num::traits::Bounded::<u256>::MAX,
             max_swap_amount1: core::num::traits::Bounded::<u256>::MAX,
         }
+    }
+
+    /// floor(a * b / c) with a 512-bit intermediate; reverts if the result exceeds u256.
+    fn mul_div(a: u256, b: u256, c: u256) -> u256 {
+        let prod: core::integer::u512 = core::num::traits::WideMul::wide_mul(a, b);
+        let (q, _) = core::integer::u512_safe_div_rem_by_u256(prod, c.try_into().expect('mul_div by zero'));
+        assert(q.limb2 == 0 && q.limb3 == 0, 'mul_div overflow');
+        u256 { low: q.limb0, high: q.limb1 }
     }
 
     /// |a - b| for i129 ticks
@@ -414,20 +429,14 @@ mod ConcLiquidityVault {
             );
 
             let mut token0_amt: u256 = swapInfo1.token_from_amount;
-            let oracle = self._get_oracle_dispatcher();
             if (swapInfo1.token_from_amount > 0
                 && swapInfo1.token_from_address != swapInfo1.token_to_address) {
-                let amt_in = swapInfo1.token_from_amount;
-                token0_amt = swapInfo1.swap(oracle);
-                // always oracle-check (AVNU min_out is relayer-controlled)
-                assert_max_slippage(rewardToken, amt_in, token0, token0_amt, max_slippage_bps, oracle);
+                token0_amt = self._oracle_checked_swap(swapInfo1, max_slippage_bps);
             }
             let mut token1_amt: u256 = swapInfo2.token_from_amount;
             if (swapInfo2.token_from_amount > 0
                 && swapInfo2.token_from_address != swapInfo2.token_to_address) {
-                let amt_in = swapInfo2.token_from_amount;
-                token1_amt = swapInfo2.swap(oracle);
-                assert_max_slippage(rewardToken, amt_in, token1, token1_amt, max_slippage_bps, oracle);
+                token1_amt = self._oracle_checked_swap(swapInfo2, max_slippage_bps);
             }
 
             self
@@ -651,6 +660,16 @@ mod ConcLiquidityVault {
             self.emit(settings);
         }
 
+        fn set_oracle(ref self: ContractState, oracle: ContractAddress) {
+            self.common.assert_governor_role();
+            self.oracle.write(oracle);
+            // sanity: must price both vault tokens validly right now
+            let pool = self.managed_pools[0].read();
+            self._price(pool.pool_key.token0);
+            self._price(pool.pool_key.token1);
+            self.emit(OracleUpdated { oracle });
+        }
+
         fn add_pool(ref self: ContractState, pool: ManagedPool) {
             self.common.assert_governor_role();
             self._modify_pool(pool, true);
@@ -733,23 +752,54 @@ mod ConcLiquidityVault {
             let max_in = if from == token0 { settings.max_swap_amount0 } else { settings.max_swap_amount1 };
             assert(amount_in <= max_in, 'swap amount too high');
 
-            let oracle = self._get_oracle_dispatcher();
-            let amount_out = swap_params.swap(oracle);
-            // unconditional: AVNU min_out is chosen by the relayer
-            assert_max_slippage(from, amount_in, to, amount_out, settings.max_slippage_bps, oracle);
+            self._oracle_checked_swap(swap_params, settings.max_slippage_bps);
+        }
+
+        /// Validated oracle price (USD, 1e18). Reverts on stale / too-few-sources / zero price.
+        fn _price(self: @ContractState, token: ContractAddress) -> u256 {
+            let p = IVesuOracleDispatcher { contract_address: self.oracle.read() }.price(token);
+            assert(p.is_valid && p.value > 0, 'oracle price invalid');
+            p.value
+        }
+
+        /// AVNU swap followed by an unconditional oracle check: value_out >= value_in * (1 - bps).
+        fn _oracle_checked_swap(
+            ref self: ContractState, swap_params: AvnuMultiRouteSwap, max_slippage_bps: u32
+        ) -> u256 {
+            let from = swap_params.token_from_address;
+            let to = swap_params.token_to_address;
+            let amount_in = swap_params.token_from_amount;
+            let mut params = swap_params;
+            // min_out >= 1 so the dependency's legacy (zkLend-style) oracle path is never used;
+            // the real check is below.
+            if params.token_to_min_amount == 0 {
+                params.token_to_min_amount = 1;
+            }
+            let amount_out = params.swap(IPriceOracleDispatcher { contract_address: self.oracle.read() });
+
+            let value_in = mul_div(
+                amount_in, self._price(from), pow::ten_pow(ERC20Helper::decimals(from).into())
+            );
+            let value_out = mul_div(
+                amount_out, self._price(to), pow::ten_pow(ERC20Helper::decimals(to).into())
+            );
+            assert(
+                value_out * 10000 >= value_in * (10000 - max_slippage_bps.into()),
+                'Swap:: Slippage too high'
+            );
+            amount_out
         }
 
         /// Oracle-implied Ekubo tick for pool_key (token1 per token0, raw units).
         fn _oracle_tick(self: @ContractState, pool_key: PoolKey) -> i129 {
-            let oracle = self._get_oracle_dispatcher();
-            let p0: u256 = oracle.get_price(pool_key.token0).into();
-            let p1: u256 = oracle.get_price(pool_key.token1).into();
-            assert(p0 > 0 && p1 > 0, 'invalid oracle price');
+            let p0 = self._price(pool_key.token0);
+            let p1 = self._price(pool_key.token1);
             let dec0: u8 = ERC20Helper::decimals(pool_key.token0);
             let dec1: u8 = ERC20Helper::decimals(pool_key.token1);
-            // ratio * 2^128 = p0 * 10^dec1 * 2^128 / (p1 * 10^dec0)
-            let ratio_x128 = (p0 * pow::ten_pow(dec1.into()) * TWO_POW_128)
-                / (p1 * pow::ten_pow(dec0.into()));
+            // ratio * 2^128 = p0 * 10^dec1 * 2^128 / (p1 * 10^dec0)   (512-bit intermediate)
+            let ratio_x128 = mul_div(
+                p0 * pow::ten_pow(dec1.into()), TWO_POW_128, p1 * pow::ten_pow(dec0.into())
+            );
             assert(ratio_x128 > 0, 'oracle ratio underflow');
             // sqrt(ratio * 2^128) * 2^64 = sqrt(ratio) * 2^128
             let root: u128 = ratio_x128.sqrt();
@@ -1061,9 +1111,6 @@ mod ConcLiquidityVault {
             return disp.get_pool_price(pool.pool_key);
         }
 
-        fn _get_oracle_dispatcher(self: @ContractState) -> IPriceOracleDispatcher {
-            IPriceOracleDispatcher { contract_address: self.oracle.read() }
-        }
 
         fn _calculate_liquidity_delta(
             self: @ContractState,

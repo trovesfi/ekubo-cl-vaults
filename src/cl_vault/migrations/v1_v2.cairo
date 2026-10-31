@@ -81,7 +81,8 @@ mod V1V2Migration {
         fn upgrade_vault(
             ref self: ContractState,
             vault: ContractAddress,
-            new_class_hash: ClassHash
+            new_class_hash: ClassHash,
+            oracle: ContractAddress
         ) {
             self._assert_owner();
 
@@ -136,6 +137,9 @@ mod V1V2Migration {
                 nft_id: current_settings.contract_nft_id,
             };
             new_vault_dispatcher.add_pool(managed_pool);
+
+            // v1 used a zkLend-style oracle; v2 needs a Vesu v2 IOracle (validated prices)
+            new_vault_dispatcher.set_oracle(oracle);
 
             // Verify managed pools are still accessible
             let pools_len = new_vault_dispatcher.get_managed_pools_len();

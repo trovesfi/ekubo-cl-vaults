@@ -43,3 +43,37 @@ pub mod MockReentrantDistributor {
         }
     }
 }
+
+#[starknet::interface]
+pub trait IMockVesuOracle<T> {
+    fn set_price(ref self: T, asset: ContractAddress, value: u256, is_valid: bool);
+}
+
+/// Vesu-v2-ABI oracle with settable prices/validity (simulates stale or low-source prices).
+#[starknet::contract]
+pub mod MockVesuOracle {
+    use starknet::ContractAddress;
+    use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess};
+    use troves_clvaults::interfaces::IVesuOracle::AssetPrice;
+
+    #[storage]
+    struct Storage {
+        values: Map<ContractAddress, u256>,
+        valid: Map<ContractAddress, bool>,
+    }
+
+    #[abi(embed_v0)]
+    impl MockImpl of super::IMockVesuOracle<ContractState> {
+        fn set_price(ref self: ContractState, asset: ContractAddress, value: u256, is_valid: bool) {
+            self.values.write(asset, value);
+            self.valid.write(asset, is_valid);
+        }
+    }
+
+    #[abi(embed_v0)]
+    impl OracleImpl of troves_clvaults::interfaces::IVesuOracle::IVesuOracle<ContractState> {
+        fn price(self: @ContractState, asset: ContractAddress) -> AssetPrice {
+            AssetPrice { value: self.values.read(asset), is_valid: self.valid.read(asset) }
+        }
+    }
+}

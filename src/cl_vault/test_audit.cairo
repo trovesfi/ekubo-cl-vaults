@@ -32,7 +32,9 @@ pub mod test_audit {
     use troves_clvaults::tests::utils as test_utils;
     use troves_clvaults::tests::mocks::{
         IMockReentrantDistributorDispatcher, IMockReentrantDistributorDispatcherTrait,
+        IMockVesuOracleDispatcher, IMockVesuOracleDispatcherTrait,
     };
+    use troves_clvaults::interfaces::IVesuOracle::{IVesuOracleDispatcher, IVesuOracleDispatcherTrait};
 
     const E18: u256 = 1_000_000_000_000_000_000;
 
@@ -89,7 +91,7 @@ pub mod test_audit {
         calldata.append(constants::EKUBO_POSITIONS().into());
         calldata.append(constants::EKUBO_POSITIONS_NFT().into());
         calldata.append(constants::EKUBO_CORE().into());
-        calldata.append(constants::ORACLE_OURS().into());
+        calldata.append(test_utils::VESU_ORACLE().into());
         fee_settings.serialize(ref calldata);
         init_values.serialize(ref calldata);
         pools.serialize(ref calldata);
@@ -347,6 +349,32 @@ pub mod test_audit {
             token_to_address: strk(),
             token_to_amount: 0,
             token_to_min_amount: min_out, // 1 => skips the oracle check on main
+            beneficiary: vault.contract_address,
+            integrator_fee_amount_bps: 0,
+            integrator_fee_recipient: 0.try_into().unwrap(),
+            routes: array![
+                Route {
+                    token_from: xstrk(),
+                    token_to: strk(),
+                    exchange_address: constants::EKUBO_CORE(),
+                    percent: 1000000000000,
+                    additional_swap_params: params,
+                },
+            ],
+        }
+    }
+
+    fn drain_swap_via(vault: IClVaultDispatcher, key: PoolKey, amount: u256) -> AvnuMultiRouteSwap {
+        let params: Array<felt252> = array![
+            key.token0.into(), key.token1.into(), key.fee.into(), key.tick_spacing.into(),
+            key.extension.into(), 10000000000000000000000000000000000000000000000000000000000000000000000,
+        ];
+        AvnuMultiRouteSwap {
+            token_from_address: xstrk(),
+            token_from_amount: amount,
+            token_to_address: strk(),
+            token_to_amount: 0,
+            token_to_min_amount: 0,
             beneficiary: vault.contract_address,
             integrator_fee_amount_bps: 0,
             integrator_fee_recipient: 0.try_into().unwrap(),
@@ -786,5 +814,104 @@ pub mod test_audit {
     fn test_fee_collector_nonzero() {
         let vault = single_pool_vault();
         vault.set_settings(FeeSettings { fee_bps: 1000, fee_collector: 0.try_into().unwrap() });
+    }
+
+    // ============================================================================
+    // Oracle (Vesu v2 IOracle: staleness + min sources enforced by the oracle)
+    // ============================================================================
+
+    // mock oracle seeded with the live Vesu prices at the fork block
+    fn mock_oracle(valid: bool) -> IMockVesuOracleDispatcher {
+        let cls = declare("MockVesuOracle").unwrap().contract_class();
+        let (addr, _) = cls.deploy(@array![]).unwrap();
+        let mock = IMockVesuOracleDispatcher { contract_address: addr };
+        let vesu = IVesuOracleDispatcher { contract_address: test_utils::VESU_ORACLE() };
+        mock.set_price(xstrk(), vesu.price(xstrk()).value, valid);
+        mock.set_price(strk(), vesu.price(strk()).value, valid);
+        mock
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_vesu_oracle_prices_valid_on_fork() {
+        let vesu = IVesuOracleDispatcher { contract_address: test_utils::VESU_ORACLE() };
+        let px = vesu.price(xstrk());
+        let ps = vesu.price(strk());
+        println!("vesu oracle xSTRK={} STRK={}", px.value, ps.value);
+        assert(px.is_valid && ps.is_valid, 'vesu prices invalid');
+        // xSTRK priced via conversion rate: must be > STRK
+        assert(px.value > ps.value, 'xSTRK <= STRK');
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_set_oracle_ok() {
+        let vault = single_pool_vault();
+        let mock = mock_oracle(true);
+        vault.set_oracle(mock.contract_address);
+        assert(vault.get_pool_settings(0).oracle == mock.contract_address, 'oracle not set');
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('oracle price invalid',))]
+    fn test_set_oracle_rejects_invalid() {
+        let vault = single_pool_vault();
+        vault.set_oracle(mock_oracle(false).contract_address);
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('Access: Missing governor role',))]
+    fn test_set_oracle_governor_only() {
+        let vault = single_pool_vault();
+        let mock = mock_oracle(true);
+        start_cheat_caller_address(vault.contract_address, 0xBAD.try_into().unwrap());
+        vault.set_oracle(mock.contract_address);
+    }
+
+    // stale / low-source price (is_valid = false) must block minting
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('oracle price invalid',))]
+    fn test_rebalance_blocked_on_invalid_oracle() {
+        let vault = single_pool_vault();
+        let alice: ContractAddress = 0xA11CE.try_into().unwrap();
+        fund(alice, 100 * E18);
+        deposit_as(vault, alice, 10 * E18, 10 * E18, 10 * E18);
+        let mock = mock_oracle(true);
+        vault.set_oracle(mock.contract_address);
+        mock.set_price(xstrk(), 1, false);
+        rebalance_max(vault);
+    }
+
+    // stale price must also block swaps
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('oracle price invalid',))]
+    fn test_swap_blocked_on_invalid_oracle() {
+        let vault = setup_live_vault();
+        let mock = mock_oracle(true);
+        vault.set_oracle(mock.contract_address);
+        mock.set_price(strk(), 1, false);
+        let pos = vault.get_positions();
+        let x_total = pos.total_amount0 + bal(xstrk(), vault.contract_address);
+        // honest route through the vault's own pool; fails on the oracle read
+        burn_all_and_swap(vault, drain_swap_via(vault, pool_key_1(), x_total / 10));
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_honest_rebalance_swap_ok() {
+        let vault = setup_live_vault();
+        let x_before = bal(xstrk(), vault.contract_address)
+            + vault.get_positions().total_amount0;
+        let s_before = bal(strk(), vault.contract_address) + vault.get_positions().total_amount1;
+        // swap 1 xSTRK through the vault's own (deep) pool: within 1% of the oracle
+        burn_all_and_swap(vault, drain_swap_via(vault, pool_key_1(), E18));
+        let x_after = bal(xstrk(), vault.contract_address);
+        let s_after = bal(strk(), vault.contract_address);
+        println!("honest swap: xSTRK {} -> {}, STRK {} -> {}", x_before, x_after, s_before, s_after);
+        assert(s_after > s_before, 'no STRK received');
     }
 }

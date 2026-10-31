@@ -210,6 +210,8 @@ pub trait IClVault<TContractState> {
         max_unused_balances: MaxUnusedBalances
     );
     fn set_rebalance_settings(ref self: TContractState, settings: RebalanceSettings);
+    // oracle must implement the Vesu v2 IOracle ABI and return valid prices for token0/token1
+    fn set_oracle(ref self: TContractState, oracle: ContractAddress);
     fn add_pool(ref self: TContractState, pool: ManagedPool);
     fn remove_pool(ref self: TContractState, pool_index: u64);
 
