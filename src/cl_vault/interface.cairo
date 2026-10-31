@@ -75,6 +75,22 @@ pub struct MaxUnusedBalances {
     pub token1: u256
 }
 
+/// Relayer guard-rails for rebalance_pool / harvest (governor-set, hard-capped in the contract).
+#[derive(Drop, Copy, Serde, starknet::Store, starknet::Event, PartialEq, Debug)]
+pub struct RebalanceSettings {
+    // oracle-checked max loss on every rebalance/harvest swap (<= 300 bps hard cap)
+    pub max_slippage_bps: u32,
+    // max |pool spot tick - oracle tick| when minting liquidity
+    pub max_pool_tick_deviation: u128,
+    // max distance (ticks) of each new bound from the oracle tick when bounds change
+    pub max_bounds_distance: u128,
+    // min seconds between two rebalances
+    pub min_rebalance_interval: u64,
+    // max token_from_amount per rebalance swap
+    pub max_swap_amount0: u256,
+    pub max_swap_amount1: u256,
+}
+
 #[derive(Drop, Copy, Serde, starknet::Store, starknet::Event)]
 pub struct RangeInstruction {
     pub liquidity_mint: u128,
@@ -193,10 +209,11 @@ pub trait IClVault<TContractState> {
         ref self: TContractState, 
         max_unused_balances: MaxUnusedBalances
     );
+    fn set_rebalance_settings(ref self: TContractState, settings: RebalanceSettings);
     fn add_pool(ref self: TContractState, pool: ManagedPool);
     fn remove_pool(ref self: TContractState, pool_index: u64);
 
-    // relayer only (non-pausable functions)
+    // relayer only (pausable functions)
     fn rebalance_pool(ref self: TContractState, rebalance_params: RebalanceParams);
     fn harvest(
         ref self: TContractState,
@@ -232,4 +249,6 @@ pub trait IClVault<TContractState> {
     // config functions
     fn get_fee_settings(self: @TContractState) -> FeeSettings;
     fn get_max_unused_balances_on_rebalance(self: @TContractState) -> MaxUnusedBalances;
+    fn get_rebalance_settings(self: @TContractState) -> RebalanceSettings;
+    fn get_last_rebalance_timestamp(self: @TContractState) -> u64;
 }

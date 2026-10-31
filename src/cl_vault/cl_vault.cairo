@@ -2,8 +2,9 @@
 mod ConcLiquidityVault {
     use starknet::{
         storage::{StoragePointerReadAccess, StoragePointerWriteAccess, Vec, VecTrait, MutableVecTrait},
-        ContractAddress, get_contract_address, get_caller_address,
+        ContractAddress, get_contract_address, get_caller_address, get_block_timestamp,
     };
+    use core::num::traits::Sqrt;
     use openzeppelin::{
         security::{
             pausable::PausableComponent,
@@ -36,9 +37,9 @@ mod ConcLiquidityVault {
         },
         components::{
             common::CommonComp,
-            swap::{AvnuMultiRouteSwap, AvnuMultiRouteSwapImpl}
+            swap::{AvnuMultiRouteSwap, AvnuMultiRouteSwapImpl, assert_max_slippage}
         },
-        interfaces::oracle::IPriceOracleDispatcher,
+        interfaces::oracle::{IPriceOracleDispatcher, IPriceOracleDispatcherTrait},
     };
     use troves_clvaults::{
         cl_vault::{
@@ -84,6 +85,12 @@ mod ConcLiquidityVault {
     impl ReentrancyGuardInternalImpl = ReentrancyGuardComponent::InternalImpl<ContractState>;
 
     pub const SCALE_18: u256 = 1_000_000_000_000_000_000;
+    // hard caps (cannot be exceeded by governor settings)
+    pub const MAX_REBALANCE_SLIPPAGE_BPS: u32 = 300; // 3%
+    pub const MAX_REBALANCE_INTERVAL: u64 = 604800; // 7 days
+    pub const MAX_TICK_MAGNITUDE: u128 = 88722883; // Ekubo
+    pub const TWO_POW_128: u256 = 0x100000000000000000000000000000000;
+    pub const TWO_POW_64: u256 = 0x10000000000000000;
 
     #[storage]
     struct Storage {
@@ -111,6 +118,9 @@ mod ConcLiquidityVault {
         // contract managed state
         sqrt_values: Vec<SqrtValues>, // sqrt values for each pool (same order as managed_pools)
         init_values: InitValues, // initial ratios for token distribution, responsible for setting the mathematical order of shares for new vaults
+        // relayer guard-rails (appended in hardening upgrade)
+        rebalance_settings: RebalanceSettings,
+        last_rebalance_ts: u64,
     }
 
     #[event]
@@ -134,6 +144,7 @@ mod ConcLiquidityVault {
         HandleFees: HandleFees,
         FeeSettings: FeeSettings,
         MaxUnusedBalances: MaxUnusedBalances,
+        RebalanceSettings: RebalanceSettings,
         Harvest: HarvestEvent,
         PoolUpdated: PoolUpdated,
         EkuboPositionUpdated: EkuboPositionUpdated,
@@ -178,7 +189,43 @@ mod ConcLiquidityVault {
         self.init_values.write(init_values);
         // Initialize max unused balances to 0 (disabled by default)
         self.max_unused_balances_on_rebalance.write(MaxUnusedBalances { token0: 0, token1: 0 });
+        // conservative defaults; governor is expected to tune per vault
+        self.rebalance_settings.write(default_rebalance_settings());
     }
+
+    fn default_rebalance_settings() -> RebalanceSettings {
+        RebalanceSettings {
+            max_slippage_bps: 100, // 1%
+            max_pool_tick_deviation: 10000, // ~1% (1 tick ~= 1e-6 relative price)
+            max_bounds_distance: 300000, // ~35%
+            min_rebalance_interval: 0,
+            max_swap_amount0: core::num::traits::Bounded::<u256>::MAX,
+            max_swap_amount1: core::num::traits::Bounded::<u256>::MAX,
+        }
+    }
+
+    /// |a - b| for i129 ticks
+    fn tick_distance(a: i129, b: i129) -> u128 {
+        if a.sign == b.sign || a.mag == 0 || b.mag == 0 {
+            if a.mag >= b.mag { a.mag - b.mag } else { b.mag - a.mag }
+        } else {
+            a.mag + b.mag
+        }
+    }
+
+    fn assert_valid_bounds(pool_key: PoolKey, bounds: Bounds) {
+        assert(bounds.lower < bounds.upper, 'invalid bounds order');
+        assert(
+            bounds.lower.mag <= MAX_TICK_MAGNITUDE && bounds.upper.mag <= MAX_TICK_MAGNITUDE,
+            'bounds out of range'
+        );
+        assert(
+            bounds.lower.mag % pool_key.tick_spacing == 0
+                && bounds.upper.mag % pool_key.tick_spacing == 0,
+            'bounds not aligned'
+        );
+    }
+
 
     #[abi(embed_v0)]
     impl ExternalImpl of IClVault<ContractState> {
@@ -429,16 +476,26 @@ mod ConcLiquidityVault {
         }
 
         /// @notice Rebalances the liquidity position based on new bounds.
-        /// @dev This function withdraws existing liquidity, adjusts token balances via swaps,
-        ///      updates the position bounds, and redeposits liquidity.
-        /// @param rebalance_params Parameters for rebalancing including bounds and swap info.
+        /// @dev Withdraws liquidity (collecting fees first), swaps between token0/token1 with an
+        ///      unconditional oracle check, optionally moves bounds (only for empty ranges, within
+        ///      the oracle band) and redeposits liquidity at a pool price close to the oracle.
         fn rebalance_pool(
             ref self: ContractState, 
             rebalance_params: RebalanceParams
         ) {
+            self.common.assert_not_paused();
             self.common.assert_relayer_role();
+            let settings = self.rebalance_settings.read();
+
+            // rate limit
+            let now = get_block_timestamp();
+            let last = self.last_rebalance_ts.read();
+            if last != 0 {
+                assert(now >= last + settings.min_rebalance_interval, 'rebalance too soon');
+            }
+            self.last_rebalance_ts.write(now);
+
             assert(rebalance_params.rebal.len().into() == self.managed_pools.len(), 'invalid rebal len');
-            // assert pool key checks
             let mut i = 0;
 
             // assert same pool keys (intend to only rebalance between same pool keys)
@@ -465,18 +522,23 @@ mod ConcLiquidityVault {
 
                 // assert liquidity to withdraw is valid
                 let pool_liq = self.total_liquidity_per_pool(pool_index: i);
-                if rebal_params.liquidity_burn > pool_liq.try_into().unwrap() {
+                if rebal_params.liquidity_burn.into() > pool_liq {
                     Errors::invalid_liquidity_burn_at_index(i);
                 }
+
+                // collect accrued fees (and strategy fee) before touching liquidity,
+                // so nothing is left behind in the position
+                let pool = self.managed_pools[i].read();
+                self._collect_strat_fee(pool);
 
                 let liq_to_withdraw = rebal_params.liquidity_burn.into();
                 self._withdraw_position(liq_to_withdraw, i);
                 i += 1;
             }
             
-            // swap
+            // swap (token0 <-> token1 only, capped, always oracle-checked)
             if rebalance_params.swap_params.token_from_amount > 0 {
-                rebalance_params.swap_params.swap(self._get_oracle_dispatcher());
+                self._checked_rebalance_swap(rebalance_params.swap_params, settings);
             }
 
             // mint liquidity
@@ -492,10 +554,29 @@ mod ConcLiquidityVault {
                     continue;
                 }
 
+                let oracle_tick = self._oracle_tick(pool.pool_key);
+                // do not mint at a manipulated pool price
+                let pool_tick = self._get_pool_price(i).tick;
+                assert(
+                    tick_distance(pool_tick, oracle_tick) <= settings.max_pool_tick_deviation,
+                    'pool price off oracle'
+                );
+
                 // update pool bounds (further computations depend on the new bounds)
                 let new_bounds = rebal_params.new_bounds;
-                self._set_pool_data(ManagedPoolField::Bounds(new_bounds), i);
-                self.sqrt_values[i].write(self._create_sqrt_values(new_bounds));
+                if new_bounds != pool.bounds {
+                    // never orphan liquidity in the old range
+                    assert(self.total_liquidity_per_pool(i) == 0, 'liquidity must be zero');
+                    assert_valid_bounds(pool.pool_key, new_bounds);
+                    assert(
+                        tick_distance(new_bounds.lower, oracle_tick) <= settings.max_bounds_distance
+                            && tick_distance(new_bounds.upper, oracle_tick) <= settings.max_bounds_distance,
+                        'bounds too far from oracle'
+                    );
+                    assert(self._find_pool_index(pool.pool_key, new_bounds).is_none(), 'pool already exists');
+                    self._set_pool_data(ManagedPoolField::Bounds(new_bounds), i);
+                    self.sqrt_values[i].write(self._create_sqrt_values(new_bounds));
+                }
 
                 // assert sufficient token balances
                 let token0_bal = ERC20Helper::balanceOf(pool.pool_key.token0, this);
@@ -503,10 +584,10 @@ mod ConcLiquidityVault {
                 let liquidity = rebal_params.liquidity_mint;
                 let (delta_amt0, delta_amt1) = self._calculate_liquidity_delta(i, (liquidity).into());
                 
-                if (token0_bal.try_into().unwrap() < delta_amt0.mag) {
+                if (token0_bal < delta_amt0.mag.into()) {
                     Errors::insufficient_amt0_at_index(i, delta_amt0.mag, token0_bal);
                 }
-                if (token1_bal.try_into().unwrap() < delta_amt1.mag) {
+                if (token1_bal < delta_amt1.mag.into()) {
                     Errors::insufficient_amt1_at_index(i, delta_amt1.mag, token1_bal);
                 }
 
@@ -543,6 +624,17 @@ mod ConcLiquidityVault {
                         actions: rebalance_params.rebal
                     }
                 );
+        }
+
+        /// @notice Updates relayer guard-rails. Values are hard-capped.
+        fn set_rebalance_settings(ref self: ContractState, settings: RebalanceSettings) {
+            self.common.assert_governor_role();
+            assert(settings.max_slippage_bps <= MAX_REBALANCE_SLIPPAGE_BPS, 'slippage bps too high');
+            assert(settings.min_rebalance_interval <= MAX_REBALANCE_INTERVAL, 'interval too high');
+            assert(settings.max_pool_tick_deviation <= MAX_TICK_MAGNITUDE, 'tick deviation too high');
+            assert(settings.max_bounds_distance <= MAX_TICK_MAGNITUDE, 'bounds distance too high');
+            self.rebalance_settings.write(settings);
+            self.emit(settings);
         }
 
         fn add_pool(ref self: ContractState, pool: ManagedPool) {
@@ -589,6 +681,14 @@ mod ConcLiquidityVault {
         fn get_managed_pool(self: @ContractState, index: u64) -> ManagedPool {
             self.managed_pools[index].read()
         }
+
+        fn get_rebalance_settings(self: @ContractState) -> RebalanceSettings {
+            self.rebalance_settings.read()
+        }
+
+        fn get_last_rebalance_timestamp(self: @ContractState) -> u64 {
+            self.last_rebalance_ts.read()
+        }
     }
 
     #[generate_trait]
@@ -596,6 +696,47 @@ mod ConcLiquidityVault {
         fn _is_paused(self: @ContractState) -> bool {
             CommonCompImpl::is_paused(self)
         }
+
+        fn _checked_rebalance_swap(
+            ref self: ContractState, swap_params: AvnuMultiRouteSwap, settings: RebalanceSettings
+        ) {
+            let pool = self.managed_pools[0].read();
+            let token0 = pool.pool_key.token0;
+            let token1 = pool.pool_key.token1;
+            let from = swap_params.token_from_address;
+            let to = swap_params.token_to_address;
+            assert(
+                (from == token0 && to == token1) || (from == token1 && to == token0),
+                'invalid swap tokens'
+            );
+            let amount_in = swap_params.token_from_amount;
+            let max_in = if from == token0 { settings.max_swap_amount0 } else { settings.max_swap_amount1 };
+            assert(amount_in <= max_in, 'swap amount too high');
+
+            let oracle = self._get_oracle_dispatcher();
+            let amount_out = swap_params.swap(oracle);
+            // unconditional: AVNU min_out is chosen by the relayer
+            assert_max_slippage(from, amount_in, to, amount_out, settings.max_slippage_bps, oracle);
+        }
+
+        /// Oracle-implied Ekubo tick for pool_key (token1 per token0, raw units).
+        fn _oracle_tick(self: @ContractState, pool_key: PoolKey) -> i129 {
+            let oracle = self._get_oracle_dispatcher();
+            let p0: u256 = oracle.get_price(pool_key.token0).into();
+            let p1: u256 = oracle.get_price(pool_key.token1).into();
+            assert(p0 > 0 && p1 > 0, 'invalid oracle price');
+            let dec0: u8 = ERC20Helper::decimals(pool_key.token0);
+            let dec1: u8 = ERC20Helper::decimals(pool_key.token1);
+            // ratio * 2^128 = p0 * 10^dec1 * 2^128 / (p1 * 10^dec0)
+            let ratio_x128 = (p0 * pow::ten_pow(dec1.into()) * TWO_POW_128)
+                / (p1 * pow::ten_pow(dec0.into()));
+            assert(ratio_x128 > 0, 'oracle ratio underflow');
+            // sqrt(ratio * 2^128) * 2^64 = sqrt(ratio) * 2^128
+            let root: u128 = ratio_x128.sqrt();
+            let sqrt_ratio: u256 = root.into() * TWO_POW_64;
+            ekuboLibDispatcher().sqrt_ratio_to_tick(sqrt_ratio)
+        }
+
 
         fn _handle_fees(ref self: ContractState, pool_index: u64) {
             let pool = self.managed_pools[pool_index].read();
@@ -773,6 +914,7 @@ mod ConcLiquidityVault {
         fn _modify_pool(ref self: ContractState, pool: ManagedPool, is_add: bool) {
             if is_add {
                 // Add pool logic
+                assert_valid_bounds(pool.pool_key, pool.bounds);
                 // Check pool doesn't already exist
                 let existing_index = self._find_pool_index(pool.pool_key, pool.bounds);
                 assert(existing_index.is_none(), 'pool already exists');

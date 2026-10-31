@@ -36,7 +36,7 @@ mod V1V2Migration {
         IUpgradeableDispatcher, IUpgradeableDispatcherTrait
     };
     use troves_clvaults::cl_vault::interface::{
-        IClVaultDispatcher, IClVaultDispatcherTrait, MaxUnusedBalances
+        IClVaultDispatcher, IClVaultDispatcherTrait, MaxUnusedBalances, RebalanceSettings
     };
     use troves_clvaults::interfaces::IEkuboCore::{Bounds, PoolKey};
     use super::IClVaultV1DispatcherTrait;
@@ -108,6 +108,20 @@ mod V1V2Migration {
                 retrieved_max_unused.token0 == 0 && retrieved_max_unused.token1 == 0,
                 'max_unused_balances invalid'
             );
+
+            // Relayer guard-rails are new storage: zero after an upgrade (blocks all swaps/mints).
+            // Initialise to the same conservative defaults as the v2 constructor.
+            new_vault_dispatcher
+                .set_rebalance_settings(
+                    RebalanceSettings {
+                        max_slippage_bps: 100,
+                        max_pool_tick_deviation: 10000,
+                        max_bounds_distance: 300000,
+                        min_rebalance_interval: 0,
+                        max_swap_amount0: core::num::traits::Bounded::<u256>::MAX,
+                        max_swap_amount1: core::num::traits::Bounded::<u256>::MAX,
+                    }
+                );
 
             // Verify other critical state variables are still accessible
             let fee_settings = new_vault_dispatcher.get_fee_settings();

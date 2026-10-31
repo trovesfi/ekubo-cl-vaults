@@ -8,8 +8,9 @@
 pub mod test_audit {
     use troves_clvaults::cl_vault::interface::{
         IClVaultDispatcher, IClVaultDispatcherTrait, FeeSettings, InitValues, ManagedPool,
-        RebalanceParams, RangeInstruction,
+        RebalanceParams, RangeInstruction, RebalanceSettings,
     };
+    use snforge_std::{start_cheat_block_timestamp};
     use strkfarm_contracts::interfaces::common::{ICommonDispatcher, ICommonDispatcherTrait};
     use snforge_std::{
         declare, ContractClassTrait, DeclareResultTrait, start_cheat_caller_address,
@@ -557,5 +558,163 @@ pub mod test_audit {
         let alice: ContractAddress = 0xA11CE.try_into().unwrap();
         start_cheat_caller_address(vault.contract_address, alice);
         vault.withdraw(0, alice);
+    }
+
+    // ============================================================================
+    // Rebalance guard-rails (C1, H1, H2)
+    // ============================================================================
+
+    fn settings_with(
+        vault: IClVaultDispatcher,
+        slippage: u32,
+        pool_dev: u128,
+        bounds_dist: u128,
+        interval: u64,
+        max0: u256,
+        max1: u256,
+    ) {
+        vault
+            .set_rebalance_settings(
+                RebalanceSettings {
+                    max_slippage_bps: slippage,
+                    max_pool_tick_deviation: pool_dev,
+                    max_bounds_distance: bounds_dist,
+                    min_rebalance_interval: interval,
+                    max_swap_amount0: max0,
+                    max_swap_amount1: max1,
+                },
+            );
+    }
+
+    fn move_bounds(vault: IClVaultDispatcher, new_bounds: Bounds, burn_all: bool) {
+        let pool = vault.get_managed_pool(0);
+        let liq: u128 = vault.total_liquidity_per_pool(0).try_into().unwrap();
+        let ins = array![
+            RangeInstruction {
+                liquidity_mint: liq / 2,
+                liquidity_burn: if burn_all { liq } else { liq / 2 },
+                pool_key: pool.pool_key,
+                new_bounds,
+            },
+        ];
+        vault.rebalance_pool(RebalanceParams { rebal: ins, swap_params: empty_swap(vault) });
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('Pausable: paused',))]
+    fn test_rebalance_paused() {
+        let vault = setup_live_vault();
+        ICommonDispatcher { contract_address: vault.contract_address }.pause();
+        rebalance_max(vault);
+    }
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('slippage bps too high',))]
+    fn test_rebalance_settings_slippage_cap() {
+        let vault = single_pool_vault();
+        settings_with(vault, 301, 10000, 300000, 0, 1, 1);
+    }
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('Access: Missing governor role',))]
+    fn test_rebalance_settings_governor_only() {
+        let vault = single_pool_vault();
+        start_cheat_caller_address(vault.contract_address, 0xBAD.try_into().unwrap());
+        settings_with(vault, 100, 10000, 300000, 0, 1, 1);
+    }
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('rebalance too soon',))]
+    fn test_rebalance_min_interval() {
+        let vault = single_pool_vault();
+        let alice: ContractAddress = 0xA11CE.try_into().unwrap();
+        fund(alice, 100 * E18);
+        deposit_as(vault, alice, 10 * E18, 10 * E18, 10 * E18);
+        settings_with(vault, 100, 10000, 300000, 3600, E18 * 1000, E18 * 1000);
+        start_cheat_block_timestamp(vault.contract_address, 1_800_000_000);
+        rebalance_max(vault);
+        start_cheat_block_timestamp(vault.contract_address, 1_800_000_000 + 3599);
+        rebalance_max(vault);
+    }
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_rebalance_min_interval_elapsed() {
+        let vault = single_pool_vault();
+        let alice: ContractAddress = 0xA11CE.try_into().unwrap();
+        fund(alice, 100 * E18);
+        deposit_as(vault, alice, 10 * E18, 10 * E18, 10 * E18);
+        settings_with(vault, 100, 10000, 300000, 3600, E18 * 1000, E18 * 1000);
+        start_cheat_block_timestamp(vault.contract_address, 1_800_000_000);
+        rebalance_max(vault);
+        start_cheat_block_timestamp(vault.contract_address, 1_800_000_000 + 3600);
+        rebalance_max(vault);
+    }
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('swap amount too high',))]
+    fn test_rebalance_swap_cap() {
+        let vault = setup_live_vault();
+        settings_with(vault, 100, 10000, 300000, 0, E18, E18);
+        let mut swap = empty_swap(vault);
+        swap.token_from_amount = 2 * E18;
+        burn_all_and_swap(vault, swap);
+    }
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('liquidity must be zero',))]
+    fn test_bounds_change_requires_empty_range() {
+        let vault = setup_live_vault();
+        let new_bounds = Bounds {
+            lower: i129 { mag: 106000, sign: false }, upper: i129 { mag: 122000, sign: false },
+        };
+        move_bounds(vault, new_bounds, false);
+    }
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_bounds_change_ok_and_fees_collected() {
+        let vault = setup_live_vault();
+        let old_nft = vault.get_managed_pool(0).nft_id;
+        let new_bounds = Bounds {
+            lower: i129 { mag: 106000, sign: false }, upper: i129 { mag: 122000, sign: false },
+        };
+        move_bounds(vault, new_bounds, true);
+        let pool = vault.get_managed_pool(0);
+        assert(pool.bounds == new_bounds, 'bounds not updated');
+        assert(pool.nft_id == old_nft, 'nft should be reused');
+        assert(vault.total_liquidity_per_pool(0) > 0, 'no liquidity in new range');
+    }
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('bounds not aligned',))]
+    fn test_bounds_must_be_aligned() {
+        let vault = setup_live_vault();
+        let new_bounds = Bounds {
+            lower: i129 { mag: 106001, sign: false }, upper: i129 { mag: 122000, sign: false },
+        };
+        move_bounds(vault, new_bounds, true);
+    }
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('bounds too far from oracle',))]
+    fn test_bounds_near_oracle() {
+        let vault = setup_live_vault();
+        // ~ 19.6M ticks away from the xSTRK/STRK oracle tick (~114k)
+        let new_bounds = Bounds {
+            lower: i129 { mag: 19600000, sign: false }, upper: i129 { mag: 19650000, sign: false },
+        };
+        move_bounds(vault, new_bounds, true);
+    }
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('pool price off oracle',))]
+    fn test_mint_rejected_when_pool_off_oracle() {
+        let vault = single_pool_vault();
+        let alice: ContractAddress = 0xA11CE.try_into().unwrap();
+        fund(alice, 100 * E18);
+        deposit_as(vault, alice, 10 * E18, 10 * E18, 10 * E18);
+        // pool tick (~110.1k) vs oracle tick (~114.2k) differ by ~4k ticks on this fork block
+        settings_with(vault, 100, 1000, 300000, 0, E18 * 1000, E18 * 1000);
+        rebalance_max(vault);
     }
 }

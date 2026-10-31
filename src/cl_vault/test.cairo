@@ -755,10 +755,10 @@ pub mod test_cl_vault_final {
         let pool0 = clVault.get_managed_pool(0);
         let _old_bounds = pool0.bounds;
         
-        // Create new bounds
+        // Create new bounds (aligned to tick spacing 200, within the oracle band)
         let new_bounds = Bounds {
-            lower: i129 { mag: 19600000, sign: false },
-            upper: i129 { mag: 19650000, sign: false }
+            lower: i129 { mag: 106000, sign: false },
+            upper: i129 { mag: 122000, sign: false }
         };
         
         // Rebalance with new bounds - burn existing and mint same amount
@@ -1457,8 +1457,10 @@ pub mod test_cl_vault_final {
         clVault.handle_fees(0);
     }
 
+    // rebalance is pausable (emergency stop for a compromised relayer)
     #[test]
     #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('Pausable: paused',))]
     fn test_rebalance_when_paused() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let common = get_common_dispatcher(clVault);
@@ -1476,7 +1478,7 @@ pub mod test_cl_vault_final {
         // Pause
         common.pause();
         
-        // Rebalance should still work (non-pausable) - use very small amounts
+        // Rebalance must be blocked while paused
         let mut liq_array = ArrayTrait::<u256>::new();
         liq_array.append(5 * pow::ten_pow(18));
         liq_array.append(2 * pow::ten_pow(18));
