@@ -190,7 +190,7 @@ mod ConcLiquidityVault {
             self.common.assert_not_paused();
             let caller: ContractAddress = get_caller_address();
             assert(amount0 > 0 || amount1 > 0, 'amounts cannot be zero');
-            let shares = self._process_deposit(amount0, amount1);
+            let (shares, paid0, paid1) = self._process_deposit(amount0, amount1);
             // mint shares
             self.erc20.mint(receiver, shares);
 
@@ -200,8 +200,8 @@ mod ConcLiquidityVault {
                         sender: caller, 
                         owner: receiver, 
                         shares: shares,
-                        amount0: amount0, 
-                        amount1: amount1 
+                        amount0: paid0,
+                        amount1: paid1
                     }
                 );
             return shares;
@@ -377,7 +377,7 @@ mod ConcLiquidityVault {
             // - This is taken care during rebalance calls
             // which we plan to run at regular intervals
             // (every fews days once or dependening on the amount of fee)
-            self._ekubo_deposit(this, fee0, fee1, this, pool_index);
+            self._ekubo_deposit(this, fee0, fee1, this, pool_index, 0);
 
             self
                 .emit(
@@ -592,7 +592,8 @@ mod ConcLiquidityVault {
                     delta_amt0.mag.into(), 
                     delta_amt1.mag.into(),  
                     this, 
-                    i
+                    i,
+                    0
                 );
 
                 i += 1;
@@ -952,7 +953,8 @@ mod ConcLiquidityVault {
             amount0: u256,
             amount1: u256,
             receiver: ContractAddress,
-            pool_index: u64 
+            pool_index: u64,
+            min_liquidity: u128
         ) {
             let pool = self.managed_pools[pool_index].read();
             let pool_key = pool.pool_key;
@@ -978,11 +980,11 @@ mod ConcLiquidityVault {
                     .get_next_token_id();
                 self._set_pool_data(ManagedPoolField::NftId(nft_id), pool_index);
                 positions_disp
-                    .mint_and_deposit(pool.pool_key, pool.bounds, 0);
+                    .mint_and_deposit(pool.pool_key, pool.bounds, min_liquidity);
             } else {
                 initial_position = self.get_position(pool_index);
                 positions_disp
-                    .deposit(nft_id, pool.pool_key, pool.bounds, 0);
+                    .deposit(nft_id, pool.pool_key, pool.bounds, min_liquidity);
             }
             
             // clear any unused tokens and send to receiver
@@ -1034,23 +1036,20 @@ mod ConcLiquidityVault {
             (fee0.into() - fee_eth, fee1.into() - fee_wst_eth)
         }   
 
+        /// @returns (shares, amount0 paid, amount1 paid)
         fn _process_deposit(
             ref self: ContractState,
             amount0: u256,
             amount1: u256,
-        ) -> u256 {
+        ) -> (u256, u256, u256) {
             let caller = get_caller_address();
             assert(amount0 > 0 || amount1 > 0, 'zero deposit');
 
-            let SharesInfo { shares, user_level_positions: _, vault_level_positions } = self._convert_to_shares(amount0, amount1);
-            assert(shares > 0, 'zero shares');
-
             let total_supply = self.total_supply();
-            if total_supply > 0 {
-                assert(vault_level_positions.total_amount0 > 0 || vault_level_positions.total_amount1 > 0, 'empty vault');
-            }
-
             if (total_supply == 0) {
+                let SharesInfo { shares, user_level_positions: _, vault_level_positions } =
+                    self._convert_to_shares(amount0, amount1);
+                assert(shares > 0, 'zero shares');
                 // vault positions can be 0 if total supply is 0, else == managed_pools.len()
                 assert(vault_level_positions.positions.len() == 0, 'unexpected flow');
 
@@ -1059,28 +1058,49 @@ mod ConcLiquidityVault {
                 let pool0 = self.managed_pools[0].read();
                 ERC20Helper::transfer_from(pool0.pool_key.token0, caller, this, amount0);
                 ERC20Helper::transfer_from(pool0.pool_key.token1, caller, this, amount1);
-                return shares;
-            } else {
-                assert(vault_level_positions.positions.len() == self.managed_pools.len().try_into().unwrap(), 'unexpected flow');
+                return (shares, amount0, amount1);
             }
 
-            // deposit funds to ekubo
+            // compound pending fees first so the share price is up to date
             let mut i = 0;
             while i != self.managed_pools.len() {
-                self.handle_fees(i); // optional
-                
-                let position = *vault_level_positions.positions.at(i.try_into().unwrap());
+                self.handle_fees(i);
+                i += 1;
+            }
+
+            let SharesInfo { shares, user_level_positions, vault_level_positions } =
+                self._convert_to_shares(amount0, amount1);
+            assert(shares > 0, 'zero shares');
+            assert(vault_level_positions.total_amount0 > 0 || vault_level_positions.total_amount1 > 0, 'empty vault');
+            assert(user_level_positions.positions.len() == self.managed_pools.len().try_into().unwrap(), 'unexpected flow');
+            // never pull more than the user offered
+            assert(user_level_positions.total_amount0 <= amount0, 'deposit exceeds amount0');
+            assert(user_level_positions.total_amount1 <= amount1, 'deposit exceeds amount1');
+
+            // deposit the user's own (per-range) amounts into ekubo
+            let mut paid0: u256 = 0;
+            let mut paid1: u256 = 0;
+            i = 0;
+            while i != self.managed_pools.len() {
+                let position = *user_level_positions.positions.at(i.try_into().unwrap());
+                if position.liquidity == 0 {
+                    i += 1;
+                    continue;
+                }
                 self._ekubo_deposit(
                     caller,
                     position.amount0,
                     position.amount1,
-                    caller,
-                    i
+                    caller, // any unused dust goes back to the user
+                    i,
+                    position.liquidity.try_into().unwrap() // shares must be fully backed
                 );
+                paid0 += position.amount0;
+                paid1 += position.amount1;
                 i += 1;
-            } 
+            }
 
-            return shares;
+            (shares, paid0, paid1)
         }
 
         /// @notice Converts given liquidity into shares.
@@ -1140,23 +1160,22 @@ mod ConcLiquidityVault {
             }
 
           
+            // scale the user's amounts down to the vault's token ratio (the scarcer token limits)
             let mut adjusted_amount0 = amount0;
             let mut adjusted_amount1 = amount1;
-            if (vault_total_amount1 == 0) {
+            if (vault_total_amount0 == 0 && vault_total_amount1 == 0) {
+                adjusted_amount0 = 0;
                 adjusted_amount1 = 0;
+            } else if (vault_total_amount1 == 0) {
+                adjusted_amount1 = 0;
+            } else if (vault_total_amount0 == 0) {
+                adjusted_amount0 = 0;
+            } else if (amount0 * vault_total_amount1 <= amount1 * vault_total_amount0) {
+                // token0 is the limiting factor
+                adjusted_amount1 = amount0 * vault_total_amount1 / vault_total_amount0;
             } else {
-                let vault_assets_ratio = vault_total_amount0 * SCALE_18 / vault_total_amount1;
-                let user_assets_ratio = amount0 * SCALE_18 / amount1;
-
-                if (vault_assets_ratio > user_assets_ratio) {
-                    // amount 0 is the limiting factor
-                    adjusted_amount0 = amount1 * vault_assets_ratio / SCALE_18;
-                    adjusted_amount1 = amount1;
-                } else {
-                    // amount 1 is the limiting factor
-                    adjusted_amount0 = amount0;
-                    adjusted_amount1 = amount0 * SCALE_18 / vault_assets_ratio;
-                }
+                // token1 is the limiting factor
+                adjusted_amount0 = amount1 * vault_total_amount0 / vault_total_amount1;
             }
             let mut i = 0;
             let mut shares = 0_u256;
@@ -1173,7 +1192,13 @@ mod ConcLiquidityVault {
                 let deposit_amt1 = if vault_total_amount1 > 0 {
                     (adjusted_amount1 * range_amt1) / vault_total_amount1
                 } else { 0 };
-                let liquidity_delta0 = self.get_liquidity_delta(i, deposit_amt0, deposit_amt1);
+                // 2 wei margin: Ekubo rounds amounts up for positive liquidity deltas, so the
+                // resulting amounts never exceed what the user offered
+                let liquidity_delta0 = self.get_liquidity_delta(
+                    i,
+                    if deposit_amt0 > 2 { deposit_amt0 - 2 } else { 0 },
+                    if deposit_amt1 > 2 { deposit_amt1 - 2 } else { 0 }
+                );
 
                 // actual deposit amounts
                 let (user_actual_deposit0, user_actual_deposit1) = self.get_amount_delta(i, liquidity_delta0.into());

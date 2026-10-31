@@ -1651,7 +1651,14 @@ pub mod test_cl_vault_final {
         // Convert to shares after deposit and rebalance
         let shares_info = clVault.convert_to_shares(amount, amount);
         assert(shares_info.shares > 0, 'shares error');
-        assert(shares_info.shares == 1152034540170218661139, 'shares error2');
+        // The old hard-coded value (1152034540170218661139) came from the inverted
+        // limiting-token branch (C2), which priced the deposit on more tokens than offered.
+        // Check the invariants instead: amounts used <= offered, shares = liq * supply / pool0 liq.
+        let user = shares_info.user_level_positions;
+        assert(user.total_amount0 <= amount && user.total_amount1 <= amount, 'shares error2');
+        let pool0_liq = clVault.total_liquidity_per_pool(0);
+        let supply = erc20Disp.total_supply();
+        assert(shares_info.shares == *user.positions.at(0).liquidity * supply / pool0_liq, 'shares error3');
         assert(shares_info.vault_level_positions.positions.len() == 2, 'should have 2 vault positions');
     }
 
