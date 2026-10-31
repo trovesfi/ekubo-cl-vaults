@@ -10,6 +10,7 @@ pub mod test_audit {
         IClVaultDispatcher, IClVaultDispatcherTrait, FeeSettings, InitValues, ManagedPool,
         RebalanceParams, RangeInstruction,
     };
+    use strkfarm_contracts::interfaces::common::{ICommonDispatcher, ICommonDispatcherTrait};
     use snforge_std::{
         declare, ContractClassTrait, DeclareResultTrait, start_cheat_caller_address,
         stop_cheat_caller_address,
@@ -495,5 +496,66 @@ pub mod test_audit {
         let after = positions.get_token_info(old_nft, pool.pool_key, pool.bounds);
         println!("H3: fees left in old NFT after burn fee0={} fee1={}", after.fees0, after.fees1);
         assert(after.fees0 == 0 && after.fees1 == 0, 'H3: fees orphaned in old NFT');
+    }
+
+    // ============================================================================
+    // Withdraw (H4): not pausable, min-out, balance deltas == reported amounts
+    // ============================================================================
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_withdraw_works_when_paused() {
+        let vault = setup_live_vault();
+        let alice: ContractAddress = 0xA11CE.try_into().unwrap();
+        ICommonDispatcher { contract_address: vault.contract_address }.pause();
+        let shares = bal(vault.contract_address, alice);
+        let a0 = bal(xstrk(), alice);
+        let a1 = bal(strk(), alice);
+        start_cheat_caller_address(vault.contract_address, alice);
+        let out = vault.withdraw(shares, alice);
+        stop_cheat_caller_address(vault.contract_address);
+        assert(bal(xstrk(), alice) - a0 == out.total_amount0, 'amount0 mismatch');
+        assert(bal(strk(), alice) - a1 == out.total_amount1, 'amount1 mismatch');
+        assert(out.total_amount0 + out.total_amount1 > 0, 'nothing withdrawn');
+        assert(bal(vault.contract_address, alice) == 0, 'shares not burned');
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('insufficient amount0',))]
+    fn test_withdraw_with_min_enforced() {
+        let vault = setup_live_vault();
+        let alice: ContractAddress = 0xA11CE.try_into().unwrap();
+        let shares = bal(vault.contract_address, alice);
+        let quote = vault.convert_to_assets(shares);
+        start_cheat_caller_address(vault.contract_address, alice);
+        vault.withdraw_with_min(shares, alice, quote.total_amount0 + 1, 0);
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_withdraw_with_min_ok() {
+        let vault = setup_live_vault();
+        let alice: ContractAddress = 0xA11CE.try_into().unwrap();
+        let shares = bal(vault.contract_address, alice) / 3;
+        let quote = vault.convert_to_assets(shares);
+        start_cheat_caller_address(vault.contract_address, alice);
+        // 0.1% tolerance for the Ekubo withdrawal fee / rounding
+        let out = vault
+            .withdraw_with_min(
+                shares, alice, quote.total_amount0 * 999 / 1000, quote.total_amount1 * 999 / 1000,
+            );
+        stop_cheat_caller_address(vault.contract_address);
+        assert(out.total_amount0 > 0 || out.total_amount1 > 0, 'nothing withdrawn');
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('zero shares',))]
+    fn test_withdraw_zero_shares() {
+        let vault = setup_live_vault();
+        let alice: ContractAddress = 0xA11CE.try_into().unwrap();
+        start_cheat_caller_address(vault.contract_address, alice);
+        vault.withdraw(0, alice);
     }
 }

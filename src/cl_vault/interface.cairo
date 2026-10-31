@@ -170,11 +170,19 @@ pub mod Events {
 
 #[starknet::interface]
 pub trait IClVault<TContractState> {
-    // user functions (all pausable functions)
+    // user functions (deposit is pausable, withdraw is not)
     fn deposit(
         ref self: TContractState, amount0: u256, amount1: u256, receiver: ContractAddress
     ) -> u256;
     fn withdraw(ref self: TContractState, shares: u256, receiver: ContractAddress) -> MyPositions;
+    // same as withdraw, reverts if the received amounts are below the given minimums
+    fn withdraw_with_min(
+        ref self: TContractState,
+        shares: u256,
+        receiver: ContractAddress,
+        min_amount0: u256,
+        min_amount1: u256
+    ) -> MyPositions;
 
     // permissionless functions (pausable function)
     fn handle_fees(ref self: TContractState, pool_index: u64);

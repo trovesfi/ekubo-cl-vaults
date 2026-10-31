@@ -1423,9 +1423,9 @@ pub mod test_cl_vault_final {
         clVault.deposit(amount, amount, this);
     }
 
+    // withdraw is intentionally NOT pausable (users can always exit)
     #[test]
     #[fork("mainnet_4707139")]
-    #[should_panic(expected: ('Pausable: paused',))]
     fn test_withdraw_when_paused() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let common = get_common_dispatcher(clVault);
