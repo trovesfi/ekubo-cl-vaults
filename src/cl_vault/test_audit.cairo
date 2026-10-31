@@ -914,4 +914,141 @@ pub mod test_audit {
         println!("honest swap: xSTRK {} -> {}, STRK {} -> {}", x_before, x_after, s_before, s_after);
         assert(s_after > s_before, 'no STRK received');
     }
+
+    // ============================================================================
+    // Idle balances are part of the share price (M2) + min_shares + dead shares
+    // ============================================================================
+
+    fn withdraw_all_as(vault: IClVaultDispatcher, user: ContractAddress) -> (u256, u256) {
+        let shares = bal(vault.contract_address, user);
+        start_cheat_caller_address(vault.contract_address, user);
+        let out = vault.withdraw(shares, user);
+        stop_cheat_caller_address(vault.contract_address);
+        (out.total_amount0, out.total_amount1)
+    }
+
+    // previously: deposit then withdraw before the first rebalance returned nothing
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_idle_withdraw_before_rebalance_returns_funds() {
+        let vault = single_pool_vault();
+        let alice: ContractAddress = 0xA11CE.try_into().unwrap();
+        fund(alice, 100 * E18);
+        deposit_as(vault, alice, 10 * E18, 10 * E18, 10 * E18);
+        let (a0, a1) = withdraw_all_as(vault, alice);
+        println!("idle exit: got {} / {}", a0, a1);
+        // everything except the dead-share dust (1000 / 7.5e18 of the vault)
+        assert(a0 >= 10 * E18 - 10_000 && a1 >= 10 * E18 - 10_000, 'idle funds not returned');
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_dead_shares_minted_to_vault() {
+        let vault = single_pool_vault();
+        let alice: ContractAddress = 0xA11CE.try_into().unwrap();
+        fund(alice, 100 * E18);
+        let shares = deposit_as(vault, alice, 10 * E18, 10 * E18, 10 * E18);
+        assert(bal(vault.contract_address, vault.contract_address) == 1000, 'dead shares');
+        assert(bal(vault.contract_address, alice) == shares, 'user shares');
+    }
+
+    // deposit -> withdraw must never be profitable, and lose at most the Ekubo withdrawal fee
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_deposit_withdraw_roundtrip() {
+        let vault = setup_live_vault();
+        let bob: ContractAddress = 0xB0B.try_into().unwrap();
+        fund(bob, 1000 * E18);
+        let b0 = bal(xstrk(), bob);
+        let b1 = bal(strk(), bob);
+        deposit_as(vault, bob, 5 * E18, 5 * E18, 1000 * E18);
+        let paid0 = b0 - bal(xstrk(), bob);
+        let paid1 = b1 - bal(strk(), bob);
+        let (got0, got1) = withdraw_all_as(vault, bob);
+        println!("roundtrip: paid {} / {}, got {} / {}", paid0, paid1, got0, got1);
+        assert(got0 <= paid0 && got1 <= paid1, 'roundtrip profitable');
+        // pool fee tier 0.01%: allow 0.1%
+        assert(got0 * 1000 >= paid0 * 999 && got1 * 1000 >= paid1 * 999, 'roundtrip loss too big');
+    }
+
+    // deposit while most funds are idle, then rebalance: no value transfer between users
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_deposit_before_rebalance_is_fair() {
+        let vault = single_pool_vault();
+        let alice: ContractAddress = 0xA11CE.try_into().unwrap();
+        let bob: ContractAddress = 0xB0B.try_into().unwrap();
+        fund(alice, 100 * E18);
+        fund(bob, 100 * E18);
+        deposit_as(vault, alice, 10 * E18, 10 * E18, 10 * E18);
+        let b0 = bal(xstrk(), bob);
+        let b1 = bal(strk(), bob);
+        deposit_as(vault, bob, 10 * E18, 10 * E18, 10 * E18);
+        let paid0 = b0 - bal(xstrk(), bob);
+        let paid1 = b1 - bal(strk(), bob);
+        rebalance_max(vault);
+        let (got0, got1) = withdraw_all_as(vault, bob);
+        let paid = paid1 + paid0 * 11 / 10;
+        let got = got1 + got0 * 11 / 10;
+        println!("bob paid value {} got value {}", paid, got);
+        assert(got <= paid, 'bob extracted value');
+        assert(got * 1000 >= paid * 999, 'bob lost value');
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('insufficient shares minted',))]
+    fn test_deposit_with_min_shares_enforced() {
+        let vault = setup_live_vault();
+        let bob: ContractAddress = 0xB0B.try_into().unwrap();
+        fund(bob, 100 * E18);
+        let quote = vault.convert_to_shares(E18, E18).shares;
+        approve_as(bob, xstrk(), vault.contract_address, E18);
+        approve_as(bob, strk(), vault.contract_address, E18);
+        start_cheat_caller_address(vault.contract_address, bob);
+        vault.deposit_with_min(E18, E18, bob, quote + 1);
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_deposit_with_min_shares_ok() {
+        let vault = setup_live_vault();
+        let bob: ContractAddress = 0xB0B.try_into().unwrap();
+        fund(bob, 100 * E18);
+        let quote = vault.convert_to_shares(E18, E18).shares;
+        approve_as(bob, xstrk(), vault.contract_address, E18);
+        approve_as(bob, strk(), vault.contract_address, E18);
+        start_cheat_caller_address(vault.contract_address, bob);
+        let shares = vault.deposit_with_min(E18, E18, bob, quote);
+        assert(shares == quote, 'quote mismatch');
+    }
+
+    // classic first-depositor inflation: tiny first deposit + large donation.
+    // Victim must still get (almost exactly) what they pay for.
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_inflation_attack_harmless() {
+        let vault = single_pool_vault();
+        let attacker: ContractAddress = 0xBAD.try_into().unwrap();
+        let victim: ContractAddress = 0xB0B.try_into().unwrap();
+        fund(attacker, 1000 * E18);
+        fund(victim, 100 * E18);
+        deposit_as(vault, attacker, 4000, 4000, 4000);
+        // donate
+        start_cheat_caller_address(xstrk(), attacker);
+        ERC20Helper::transfer(xstrk(), vault.contract_address, 100 * E18);
+        stop_cheat_caller_address(xstrk());
+        start_cheat_caller_address(strk(), attacker);
+        ERC20Helper::transfer(strk(), vault.contract_address, 100 * E18);
+        stop_cheat_caller_address(strk());
+
+        let v0 = bal(xstrk(), victim);
+        let v1 = bal(strk(), victim);
+        deposit_as(vault, victim, 10 * E18, 10 * E18, 10 * E18);
+        let paid0 = v0 - bal(xstrk(), victim);
+        let paid1 = v1 - bal(strk(), victim);
+        let (got0, got1) = withdraw_all_as(vault, victim);
+        println!("inflation: victim paid {}/{} got {}/{}", paid0, paid1, got0, got1);
+        assert(got0 * 1000 >= paid0 * 999 && got1 * 1000 >= paid1 * 999, 'victim lost value');
+    }
 }

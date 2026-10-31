@@ -1655,13 +1655,22 @@ pub mod test_cl_vault_final {
         assert(shares_info.shares > 0, 'shares error');
         // The old hard-coded value (1152034540170218661139) came from the inverted
         // limiting-token branch (C2), which priced the deposit on more tokens than offered.
-        // Check the invariants instead: amounts used <= offered, shares = liq * supply / pool0 liq.
-        let user = shares_info.user_level_positions;
-        assert(user.total_amount0 <= amount && user.total_amount1 <= amount, 'shares error2');
-        let pool0_liq = clVault.total_liquidity_per_pool(0);
+        // Check the invariants instead: amounts used <= offered, and shares are the pro-rata
+        // claim on the vault's total holdings (positions + idle) of the limiting token.
+        let shares = shares_info.shares;
+        let vlen = shares_info.vault_level_positions.positions.len();
+        let u0 = shares_info.user_level_positions.total_amount0;
+        let u1 = shares_info.user_level_positions.total_amount1;
+        let v0 = shares_info.vault_level_positions.total_amount0;
+        let v1 = shares_info.vault_level_positions.total_amount1;
+        assert(u0 <= amount && u1 <= amount, 'shares error2');
         let supply = erc20Disp.total_supply();
-        assert(shares_info.shares == *user.positions.at(0).liquidity * supply / pool0_liq, 'shares error3');
-        assert(shares_info.vault_level_positions.positions.len() == 2, 'should have 2 vault positions');
+        let s0 = amount * supply / v0;
+        let s1 = amount * supply / v1;
+        let expected = if s0 < s1 { s0 } else { s1 };
+        assert(shares <= expected, 'shares error3');
+        assert(shares * 1_000_000 >= expected * 999_999, 'shares error4');
+        assert(vlen == 2, 'should have 2 vault positions');
     }
 
     #[test]

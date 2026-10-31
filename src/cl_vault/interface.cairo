@@ -190,6 +190,14 @@ pub trait IClVault<TContractState> {
     fn deposit(
         ref self: TContractState, amount0: u256, amount1: u256, receiver: ContractAddress
     ) -> u256;
+    // same as deposit, reverts if fewer than min_shares are minted
+    fn deposit_with_min(
+        ref self: TContractState,
+        amount0: u256,
+        amount1: u256,
+        receiver: ContractAddress,
+        min_shares: u256
+    ) -> u256;
     fn withdraw(ref self: TContractState, shares: u256, receiver: ContractAddress) -> MyPositions;
     // same as withdraw, reverts if the received amounts are below the given minimums
     fn withdraw_with_min(
