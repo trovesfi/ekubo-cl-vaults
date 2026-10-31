@@ -769,15 +769,15 @@ pub mod test_audit {
     #[should_panic(expected: ('invalid fee bps',))]
     fn test_fee_cap() {
         let vault = single_pool_vault();
-        vault.set_settings(FeeSettings { fee_bps: 2001, fee_collector: constants::EKUBO_FEE_COLLECTOR() });
+        vault.set_settings(FeeSettings { fee_bps: 10001, fee_collector: constants::EKUBO_FEE_COLLECTOR() });
     }
 
     #[test]
     #[fork("mainnet_4707139")]
     fn test_fee_at_cap_ok() {
         let vault = single_pool_vault();
-        vault.set_settings(FeeSettings { fee_bps: 2000, fee_collector: constants::EKUBO_FEE_COLLECTOR() });
-        assert(vault.get_fee_settings().fee_bps == 2000, 'fee not set');
+        vault.set_settings(FeeSettings { fee_bps: 10000, fee_collector: constants::EKUBO_FEE_COLLECTOR() });
+        assert(vault.get_fee_settings().fee_bps == 10000, 'fee not set');
     }
 
     #[test]

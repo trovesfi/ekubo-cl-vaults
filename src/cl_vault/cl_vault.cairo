@@ -86,7 +86,7 @@ mod ConcLiquidityVault {
 
     pub const SCALE_18: u256 = 1_000_000_000_000_000_000;
     // hard caps (cannot be exceeded by governor settings)
-    pub const MAX_FEE_BPS: u256 = 2000; // 20% performance fee
+    pub const MAX_FEE_BPS: u256 = 10000; // 100%: governor decides; only sanity-bounded
     pub const MAX_REBALANCE_SLIPPAGE_BPS: u32 = 300; // 3%
     pub const MAX_REBALANCE_INTERVAL: u64 = 604800; // 7 days
     pub const MAX_TICK_MAGNITUDE: u128 = 88722883; // Ekubo
