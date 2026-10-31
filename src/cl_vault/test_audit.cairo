@@ -759,4 +759,32 @@ pub mod test_audit {
         // non-empty proof so the vault calls distributor.claim(), which re-enters handle_fees
         vault.harvest(mock, claim, array![1].span(), empty_swap(vault), empty_swap(vault));
     }
+
+    // ============================================================================
+    // Fee cap (H6)
+    // ============================================================================
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('invalid fee bps',))]
+    fn test_fee_cap() {
+        let vault = single_pool_vault();
+        vault.set_settings(FeeSettings { fee_bps: 2001, fee_collector: constants::EKUBO_FEE_COLLECTOR() });
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_fee_at_cap_ok() {
+        let vault = single_pool_vault();
+        vault.set_settings(FeeSettings { fee_bps: 2000, fee_collector: constants::EKUBO_FEE_COLLECTOR() });
+        assert(vault.get_fee_settings().fee_bps == 2000, 'fee not set');
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('invalid fee collector',))]
+    fn test_fee_collector_nonzero() {
+        let vault = single_pool_vault();
+        vault.set_settings(FeeSettings { fee_bps: 1000, fee_collector: 0.try_into().unwrap() });
+    }
 }

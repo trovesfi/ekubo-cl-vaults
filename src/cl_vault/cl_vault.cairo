@@ -86,6 +86,7 @@ mod ConcLiquidityVault {
 
     pub const SCALE_18: u256 = 1_000_000_000_000_000_000;
     // hard caps (cannot be exceeded by governor settings)
+    pub const MAX_FEE_BPS: u256 = 2000; // 20% performance fee
     pub const MAX_REBALANCE_SLIPPAGE_BPS: u32 = 300; // 3%
     pub const MAX_REBALANCE_INTERVAL: u64 = 604800; // 7 days
     pub const MAX_TICK_MAGNITUDE: u128 = 88722883; // Ekubo
@@ -182,7 +183,7 @@ mod ConcLiquidityVault {
         self.ekubo_positions_nft.write(ekubo_positions_nft);
         self.ekubo_core.write(ekubo_core);
         self.oracle.write(oracle);
-        assert(fee_settings.fee_bps <= 10000, 'invalid fee bps');
+        self._assert_valid_fee_settings(fee_settings);
         self.fee_settings.write(fee_settings);
         assert(init_values.init0 != 0, 'invalid init0');
         assert(init_values.init1 != 0, 'invalid init1');
@@ -473,6 +474,7 @@ mod ConcLiquidityVault {
         /// @notice Updates the fee settings of the contract.
         fn set_settings(ref self: ContractState, fee_settings: FeeSettings) {
             self.common.assert_governor_role();
+            self._assert_valid_fee_settings(fee_settings);
             self.fee_settings.write(fee_settings);
             self.emit(fee_settings);
         }
@@ -707,6 +709,12 @@ mod ConcLiquidityVault {
 
     #[generate_trait]
     pub impl InternalImpl of InternalTrait {
+        fn _assert_valid_fee_settings(self: @ContractState, fee_settings: FeeSettings) {
+            assert(fee_settings.fee_bps <= MAX_FEE_BPS, 'invalid fee bps');
+            let collector: felt252 = fee_settings.fee_collector.into();
+            assert(collector != 0, 'invalid fee collector');
+        }
+
         fn _is_paused(self: @ContractState) -> bool {
             CommonCompImpl::is_paused(self)
         }
