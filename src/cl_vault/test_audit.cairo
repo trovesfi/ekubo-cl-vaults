@@ -30,6 +30,9 @@ pub mod test_audit {
     use ekubo::types::bounds::Bounds as EkBounds;
     use openzeppelin::utils::serde::SerializedAppend;
     use troves_clvaults::tests::utils as test_utils;
+    use troves_clvaults::tests::mocks::{
+        IMockReentrantDistributorDispatcher, IMockReentrantDistributorDispatcherTrait,
+    };
 
     const E18: u256 = 1_000_000_000_000_000_000;
 
@@ -735,5 +738,25 @@ pub mod test_audit {
             .harvest(
                 constants::EKUBO_CORE(), claim, array![].span(), empty_swap(vault), empty_swap(vault),
             );
+    }
+
+    // ============================================================================
+    // Reentrancy guard (H7)
+    // ============================================================================
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('ReentrancyGuard: reentrant call',))]
+    fn test_reentrancy_blocked() {
+        let vault = setup_live_vault();
+        let cls = declare("MockReentrantDistributor").unwrap().contract_class();
+        let (mock, _) = cls.deploy(@array![]).unwrap();
+        IMockReentrantDistributorDispatcher { contract_address: mock }
+            .set_target(vault.contract_address, strk());
+        let claim = troves_clvaults::interfaces::IEkuboDistributor::Claim {
+            id: 0, claimee: vault.contract_address, amount: 1,
+        };
+        // non-empty proof so the vault calls distributor.claim(), which re-enters handle_fees
+        vault.harvest(mock, claim, array![1].span(), empty_swap(vault), empty_swap(vault));
     }
 }

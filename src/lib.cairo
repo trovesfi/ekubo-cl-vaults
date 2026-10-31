@@ -24,4 +24,5 @@ pub mod cl_vault {
 #[cfg(test)]
 pub mod tests {
     pub mod utils;
+    pub mod mocks;
 }
