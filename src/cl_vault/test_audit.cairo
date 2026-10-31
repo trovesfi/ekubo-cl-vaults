@@ -445,7 +445,7 @@ pub mod test_audit {
             },
         ];
         vault.rebalance_pool(RebalanceParams { rebal: ins, swap_params: empty_swap(vault) });
-        assert(vault.get_managed_pool(1).nft_id == 0, 'setup: nft not reset');
+        assert(vault.total_liquidity_per_pool(1) == 0, 'setup: pool 1 not empty');
 
         // alice must still be able to exit
         let a0 = bal(xstrk(), alice);
