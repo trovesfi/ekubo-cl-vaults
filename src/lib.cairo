@@ -17,6 +17,8 @@ pub mod cl_vault {
     }
     #[cfg(test)]
     pub mod test;
+    #[cfg(test)]
+    pub mod test_audit;
 }
 
 #[cfg(test)]
