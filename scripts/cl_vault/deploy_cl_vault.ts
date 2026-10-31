@@ -1,5 +1,5 @@
 import { ACCOUNT_NAME, deployContract, getAccount, getRpcProvider, getSwapInfo, myDeclare } from "../lib/utils";
-import { EKUBO_POSITIONS, EKUBO_CORE, EKUBO_POSITIONS_NFT, ORACLE_OURS, wstETH, ETH, ACCESS_CONTROL, xSTRK, STRK, accountKeyMap, SUPER_ADMIN, USDC, USDT, WBTC, xWBTC, tBTC, xtBTC, xsBTC, solvBTC} from "../lib/constants";
+import { EKUBO_POSITIONS, EKUBO_CORE, EKUBO_POSITIONS_NFT, VESU_ORACLE, CL_VAULT_MIN_TIMELOCK_DELAY, wstETH, ETH, ACCESS_CONTROL, xSTRK, STRK, accountKeyMap, SUPER_ADMIN, USDC, USDT, WBTC, xWBTC, tBTC, xtBTC, xsBTC, solvBTC} from "../lib/constants";
 import { byteArray, Contract, num, TransactionExecutionStatus, uint256 } from "starknet";
 import { ContractAddr, EkuboCLVaultStrategies } from "@strkfarm/sdk";
 // import { executeBatch, scheduleBatch } from "../timelock/actions";
@@ -106,10 +106,11 @@ async function declareAndDeployConcLiquidityVault(
         ekubo_positions_contract: EKUBO_POSITIONS,
         ekubo_positions_nft: EKUBO_POSITIONS_NFT,
         ekubo_core: EKUBO_CORE,
-        oracle: ORACLE_OURS,
+        oracle: VESU_ORACLE,
         fee_settings: feeSettings,
         init_values: initValues,
-        managed_pools: managedPools
+        managed_pools: managedPools,
+        min_timelock_delay: CL_VAULT_MIN_TIMELOCK_DELAY
     }, symbol);
 }
 

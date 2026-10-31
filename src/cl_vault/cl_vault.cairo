@@ -5,6 +5,7 @@ mod ConcLiquidityVault {
         ContractAddress, get_contract_address, get_caller_address, get_block_timestamp,
     };
     use core::num::traits::Sqrt;
+    use openzeppelin::governance::timelock::interface::ITimelockDispatcherTrait;
     use openzeppelin::{
         security::{
             pausable::PausableComponent,
@@ -77,7 +78,7 @@ mod ConcLiquidityVault {
     #[abi(embed_v0)]
     impl ERC20MixinImpl = ERC20Component::ERC20MixinImpl<ContractState>;
 
-    #[abi(embed_v0)]
+    // Not embedded directly: TimelockedCommonImpl wraps it so `upgrade` also requires a timelock.
     impl CommonCompImpl = CommonComp::CommonImpl<ContractState>;
 
     // Internal impls
@@ -125,6 +126,9 @@ mod ConcLiquidityVault {
         // relayer guard-rails (appended in hardening upgrade)
         rebalance_settings: RebalanceSettings,
         last_rebalance_ts: u64,
+        // governor/admin callers must be timelocks with get_min_delay() >= this (0 = not enforced,
+        // only possible on vaults upgraded from v1 until the migration sets it)
+        min_timelock_delay: u64,
     }
 
     #[event]
@@ -150,6 +154,7 @@ mod ConcLiquidityVault {
         MaxUnusedBalances: MaxUnusedBalances,
         RebalanceSettings: RebalanceSettings,
         OracleUpdated: OracleUpdated,
+        MinTimelockDelayUpdated: MinTimelockDelayUpdated,
         Harvest: HarvestEvent,
         PoolUpdated: PoolUpdated,
         EkuboPositionUpdated: EkuboPositionUpdated,
@@ -168,7 +173,10 @@ mod ConcLiquidityVault {
         fee_settings: FeeSettings,
         init_values: InitValues,
         managed_pools: Array<ManagedPool>,
+        min_timelock_delay: u64,
     ) {
+        assert(min_timelock_delay > 0, 'invalid min timelock delay');
+        self.min_timelock_delay.write(min_timelock_delay);
         self.erc20.initializer(name, symbol);
         self.common.initializer(access_control);
         self
@@ -196,6 +204,11 @@ mod ConcLiquidityVault {
         self.max_unused_balances_on_rebalance.write(MaxUnusedBalances { token0: 0, token1: 0 });
         // conservative defaults; governor is expected to tune per vault
         self.rebalance_settings.write(default_rebalance_settings());
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct MinTimelockDelayUpdated {
+        min_delay: u64,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -485,6 +498,7 @@ mod ConcLiquidityVault {
         /// @notice Updates the fee settings of the contract.
         fn set_settings(ref self: ContractState, fee_settings: FeeSettings) {
             self.common.assert_governor_role();
+            self._assert_timelocked_caller();
             self._assert_valid_fee_settings(fee_settings);
             self.fee_settings.write(fee_settings);
             self.emit(fee_settings);
@@ -496,6 +510,7 @@ mod ConcLiquidityVault {
             max_unused_balances: MaxUnusedBalances
         ) {
             self.common.assert_governor_role();
+            self._assert_timelocked_caller();
             self.max_unused_balances_on_rebalance.write(max_unused_balances);
             self.emit(max_unused_balances);
         }
@@ -656,6 +671,7 @@ mod ConcLiquidityVault {
         /// @notice Updates relayer guard-rails (governor decision; only sanity-bounded).
         fn set_rebalance_settings(ref self: ContractState, settings: RebalanceSettings) {
             self.common.assert_governor_role();
+            self._assert_timelocked_caller();
             assert(settings.max_slippage_bps <= MAX_REBALANCE_SLIPPAGE_BPS, 'slippage bps too high');
             assert(settings.max_pool_tick_deviation <= MAX_TICK_MAGNITUDE, 'tick deviation too high');
             assert(settings.max_bounds_distance <= MAX_TICK_MAGNITUDE, 'bounds distance too high');
@@ -665,6 +681,7 @@ mod ConcLiquidityVault {
 
         fn set_oracle(ref self: ContractState, oracle: ContractAddress) {
             self.common.assert_governor_role();
+            self._assert_timelocked_caller();
             self.oracle.write(oracle);
             // sanity: must price both vault tokens validly right now
             let pool = self.managed_pools[0].read();
@@ -675,11 +692,13 @@ mod ConcLiquidityVault {
 
         fn add_pool(ref self: ContractState, pool: ManagedPool) {
             self.common.assert_governor_role();
+            self._assert_timelocked_caller();
             self._modify_pool(pool, true);
         }
 
         fn remove_pool(ref self: ContractState, pool_index: u64) {
             self.common.assert_governor_role();
+            self._assert_timelocked_caller();
             let pool = self.managed_pools[pool_index].read();
             self._modify_pool(pool, false);
         }
@@ -718,6 +737,19 @@ mod ConcLiquidityVault {
             self.managed_pools[index].read()
         }
 
+        /// @notice Minimum delay the governor/admin timelock must enforce. Must stay > 0.
+        fn set_min_timelock_delay(ref self: ContractState, min_delay: u64) {
+            self.common.assert_governor_role();
+            self._assert_timelocked_caller();
+            assert(min_delay > 0, 'invalid min timelock delay');
+            self.min_timelock_delay.write(min_delay);
+            self.emit(MinTimelockDelayUpdated { min_delay });
+        }
+
+        fn get_min_timelock_delay(self: @ContractState) -> u64 {
+            self.min_timelock_delay.read()
+        }
+
         fn get_rebalance_settings(self: @ContractState) -> RebalanceSettings {
             self.rebalance_settings.read()
         }
@@ -727,8 +759,49 @@ mod ConcLiquidityVault {
         }
     }
 
+    /// ICommon with a timelock requirement on upgrade. pause/unpause stay instant (guardian).
+    #[abi(embed_v0)]
+    impl TimelockedCommonImpl of strkfarm_contracts::interfaces::common::ICommon<ContractState> {
+        fn upgrade(ref self: ContractState, new_class: starknet::ClassHash) {
+            self.common.assert_admin_role();
+            self._assert_timelocked_caller();
+            CommonCompImpl::upgrade(ref self, new_class);
+        }
+
+        fn pause(ref self: ContractState) {
+            CommonCompImpl::pause(ref self);
+        }
+
+        fn unpause(ref self: ContractState) {
+            CommonCompImpl::unpause(ref self);
+        }
+
+        fn is_paused(self: @ContractState) -> bool {
+            CommonCompImpl::is_paused(self)
+        }
+
+        fn access_control(self: @ContractState) -> ContractAddress {
+            CommonCompImpl::access_control(self)
+        }
+    }
+
     #[generate_trait]
     pub impl InternalImpl of InternalTrait {
+        /// The caller (already role-checked) must be a timelock (OZ TimelockController ABI)
+        /// whose min delay is at least `min_timelock_delay`. A speed bump, not a proof: a
+        /// contract can fake get_min_delay, but it forces an explicit, reviewable setup.
+        fn _assert_timelocked_caller(self: @ContractState) {
+            let required = self.min_timelock_delay.read();
+            if required == 0 {
+                return;
+            }
+            let delay = openzeppelin::governance::timelock::interface::ITimelockDispatcher {
+                contract_address: get_caller_address()
+            }
+                .get_min_delay();
+            assert(delay >= required, 'timelock delay too short');
+        }
+
         fn _assert_valid_fee_settings(self: @ContractState, fee_settings: FeeSettings) {
             assert(fee_settings.fee_bps <= MAX_FEE_BPS, 'invalid fee bps');
             let collector: felt252 = fee_settings.fee_collector.into();

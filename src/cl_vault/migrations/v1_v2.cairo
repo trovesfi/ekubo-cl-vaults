@@ -82,7 +82,8 @@ mod V1V2Migration {
             ref self: ContractState,
             vault: ContractAddress,
             new_class_hash: ClassHash,
-            oracle: ContractAddress
+            oracle: ContractAddress,
+            min_timelock_delay: u64
         ) {
             self._assert_owner();
 
@@ -148,6 +149,10 @@ mod V1V2Migration {
             // assert liquidity at 0th position > 0
             let liquidity = new_vault_dispatcher.total_liquidity_per_pool(0);
             assert(liquidity == old_liquidity, 'liquidity invalid');
+
+            // last step: from now on governor/admin calls must come from a timelock
+            new_vault_dispatcher.set_min_timelock_delay(min_timelock_delay);
+            assert(new_vault_dispatcher.get_min_timelock_delay() == min_timelock_delay, 'timelock delay not set');
 
             self.emit(
                 MigrationExecuted {

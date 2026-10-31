@@ -234,8 +234,10 @@ pub mod test_cl_vault_final {
         fee_settings.serialize(ref calldata);
         init_values.serialize(ref calldata);
         managed_pools.serialize(ref calldata);
+        calldata.append(test_utils::TEST_TIMELOCK_DELAY.into());
         
         let (address, _) = clVault.deploy(@calldata).expect('ClVault deploy failed');
+        test_utils::mock_timelock(test_utils::TEST_TIMELOCK_DELAY);
 
         (
             IClVaultDispatcher { contract_address: address },

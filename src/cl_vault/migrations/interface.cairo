@@ -6,6 +6,7 @@ pub trait IMigration<TContractState> {
         ref self: TContractState,
         vault: ContractAddress,
         new_class_hash: ClassHash,
-        oracle: ContractAddress
+        oracle: ContractAddress,
+        min_timelock_delay: u64
     );
 }

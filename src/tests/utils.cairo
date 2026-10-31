@@ -1,7 +1,7 @@
 use snforge_std::{
     declare, ContractClassTrait, start_cheat_caller_address, stop_cheat_caller_address,
 };
-use snforge_std::{DeclareResultTrait};
+use snforge_std::{DeclareResultTrait, start_mock_call, test_address};
 use starknet::{ContractAddress, get_contract_address};
 use troves_clvaults::interfaces::IEkuboDistributor::{IEkuboDistributorDispatcher};
 use strkfarm_contracts::helpers::constants;
@@ -30,4 +30,11 @@ pub fn load_strk(user: ContractAddress) {
 /// per-asset staleness timeout and minimum-sources checks; xSTRK uses CONVERSION_XSTRK/USD.
 pub fn VESU_ORACLE() -> ContractAddress {
     0xfe4bfb1b353ba51eb34dff963017f94af5a5cf8bdf3dfc191c504657f3c05.try_into().unwrap()
+}
+
+pub const TEST_TIMELOCK_DELAY: u64 = 86400;
+
+/// Makes the test contract (holder of all roles) look like an OZ timelock with the given delay.
+pub fn mock_timelock(delay: u64) {
+    start_mock_call(test_address(), selector!("get_min_delay"), delay);
 }

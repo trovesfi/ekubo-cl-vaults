@@ -261,4 +261,8 @@ pub trait IClVault<TContractState> {
     fn get_max_unused_balances_on_rebalance(self: @TContractState) -> MaxUnusedBalances;
     fn get_rebalance_settings(self: @TContractState) -> RebalanceSettings;
     fn get_last_rebalance_timestamp(self: @TContractState) -> u64;
+
+    // governor (timelocked): min delay required from governor/admin timelocks (> 0)
+    fn set_min_timelock_delay(ref self: TContractState, min_delay: u64);
+    fn get_min_timelock_delay(self: @TContractState) -> u64;
 }

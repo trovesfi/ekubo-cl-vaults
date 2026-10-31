@@ -16,6 +16,10 @@ export const solvBTC = '0x0593e034dda23eea82d2ba9a30960ed42cf4a01502cc2351dc9b98
 // oracle stuff
 export const ORACLE = '0x023fb3afbff2c0e3399f896dcf7400acf1a161941cfb386e34a123f228c62832'
 export const ORACLE_OURS = '0x435ab4d9c05c00455f2cb583d8cead3a6e3e5e713de1890b0bb2dba6b8d8349'
+// Vesu v2 oracle (Pragma, staleness + min-sources checks; Vesu IOracle ABI) - used by CL vault v2
+export const VESU_ORACLE = '0xfe4bfb1b353ba51eb34dff963017f94af5a5cf8bdf3dfc191c504657f3c05'
+// governor/admin timelock min delay enforced by the CL vault (seconds)
+export const CL_VAULT_MIN_TIMELOCK_DELAY = 86400
 
 // Nostra MM
 export const NOSTRA_ETH_COLLATERAL = '0x057146f6409deb4c9fa12866915dd952aa07c1eb2752e451d7f3b042086bdeb8'

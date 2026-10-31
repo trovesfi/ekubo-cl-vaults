@@ -63,7 +63,7 @@ mod test_v1_v2_migration {
         stop_cheat_caller_address(access_control_address);
 
         // Execute the migration
-        migration.upgrade_vault(OLD_VAULT_ADDRESS, new_class_hash, troves_clvaults::tests::utils::VESU_ORACLE());
+        migration.upgrade_vault(OLD_VAULT_ADDRESS, new_class_hash, troves_clvaults::tests::utils::VESU_ORACLE(), 86400);
 
         // Verify the migration by checking the new function exists
         let vault_dispatcher = IClVaultDispatcher { contract_address: OLD_VAULT_ADDRESS };

@@ -95,7 +95,9 @@ pub mod test_audit {
         fee_settings.serialize(ref calldata);
         init_values.serialize(ref calldata);
         pools.serialize(ref calldata);
+        calldata.append(test_utils::TEST_TIMELOCK_DELAY.into());
         let (address, _) = cls.deploy(@calldata).expect('ClVault deploy failed');
+        test_utils::mock_timelock(test_utils::TEST_TIMELOCK_DELAY);
         IClVaultDispatcher { contract_address: address }
     }
 
@@ -1051,4 +1053,93 @@ pub mod test_audit {
         println!("inflation: victim paid {}/{} got {}/{}", paid0, paid1, got0, got1);
         assert(got0 * 1000 >= paid0 * 999 && got1 * 1000 >= paid1 * 999, 'victim lost value');
     }
+
+    // ============================================================================
+    // Timelock guard on governor / admin calls
+    // ============================================================================
+
+    fn fee(bps: u256) -> FeeSettings {
+        FeeSettings { fee_bps: bps, fee_collector: constants::EKUBO_FEE_COLLECTOR() }
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('timelock delay too short',))]
+    fn test_governor_timelock_too_short() {
+        let vault = single_pool_vault();
+        test_utils::mock_timelock(test_utils::TEST_TIMELOCK_DELAY - 1);
+        vault.set_settings(fee(500));
+    }
+
+    // a plain account (no get_min_delay entrypoint) cannot act as governor
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic]
+    fn test_governor_must_be_contract_with_timelock_abi() {
+        let vault = single_pool_vault();
+        snforge_std::stop_mock_call(snforge_std::test_address(), selector!("get_min_delay"));
+        vault.add_pool(ManagedPool { pool_key: pool_key_2(), bounds: bounds_2(), nft_id: 0 });
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_min_timelock_delay_update() {
+        let vault = single_pool_vault();
+        assert(vault.get_min_timelock_delay() == test_utils::TEST_TIMELOCK_DELAY, 'init delay');
+        vault.set_min_timelock_delay(3600);
+        assert(vault.get_min_timelock_delay() == 3600, 'delay not updated');
+        // a 1h timelock is now enough
+        test_utils::mock_timelock(3600);
+        vault.set_settings(fee(500));
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('invalid min timelock delay',))]
+    fn test_min_timelock_delay_nonzero() {
+        let vault = single_pool_vault();
+        vault.set_min_timelock_delay(0);
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_pause_needs_no_timelock() {
+        let vault = single_pool_vault();
+        snforge_std::stop_mock_call(snforge_std::test_address(), selector!("get_min_delay"));
+        let common = ICommonDispatcher { contract_address: vault.contract_address };
+        common.pause();
+        assert(common.is_paused(), 'not paused');
+        common.unpause();
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('timelock delay too short',))]
+    fn test_upgrade_requires_timelock() {
+        let vault = single_pool_vault();
+        let cls = *declare("ConcLiquidityVault").unwrap().contract_class().class_hash;
+        test_utils::mock_timelock(1);
+        ICommonDispatcher { contract_address: vault.contract_address }.upgrade(cls);
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_upgrade_with_timelock_ok() {
+        let vault = single_pool_vault();
+        let cls = *declare("ConcLiquidityVault").unwrap().contract_class().class_hash;
+        ICommonDispatcher { contract_address: vault.contract_address }.upgrade(cls);
+        assert(vault.get_min_timelock_delay() == test_utils::TEST_TIMELOCK_DELAY, 'state lost');
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('Access: Missing admin role',))]
+    fn test_upgrade_admin_only() {
+        let vault = single_pool_vault();
+        let cls = *declare("ConcLiquidityVault").unwrap().contract_class().class_hash;
+        start_cheat_caller_address(vault.contract_address, 0xBAD.try_into().unwrap());
+        ICommonDispatcher { contract_address: vault.contract_address }.upgrade(cls);
+    }
+    // NB: constructor `min_timelock_delay > 0` is not unit-tested: snforge 0.54 aborts the
+    // test on any constructor revert (not catchable via deploy() or deploy_syscall).
 }
