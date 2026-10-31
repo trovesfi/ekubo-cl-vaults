@@ -75,10 +75,10 @@ pub struct MaxUnusedBalances {
     pub token1: u256
 }
 
-/// Relayer guard-rails for rebalance_pool / harvest (governor-set, hard-capped in the contract).
+/// Relayer guard-rails for rebalance_pool / harvest (governor-set).
 #[derive(Drop, Copy, Serde, starknet::Store, starknet::Event, PartialEq, Debug)]
 pub struct RebalanceSettings {
-    // oracle-checked max loss on every rebalance/harvest swap (<= 300 bps hard cap)
+    // oracle-checked max loss on every rebalance/harvest swap (bps, <= 10000)
     pub max_slippage_bps: u32,
     // max |pool spot tick - oracle tick| when minting liquidity
     pub max_pool_tick_deviation: u128,

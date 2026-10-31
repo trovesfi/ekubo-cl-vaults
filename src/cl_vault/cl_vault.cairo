@@ -87,8 +87,7 @@ mod ConcLiquidityVault {
     pub const SCALE_18: u256 = 1_000_000_000_000_000_000;
     // hard caps (cannot be exceeded by governor settings)
     pub const MAX_FEE_BPS: u256 = 10000; // 100%: governor decides; only sanity-bounded
-    pub const MAX_REBALANCE_SLIPPAGE_BPS: u32 = 300; // 3%
-    pub const MAX_REBALANCE_INTERVAL: u64 = 604800; // 7 days
+    pub const MAX_REBALANCE_SLIPPAGE_BPS: u32 = 10000; // sanity bound only; governor decides
     pub const MAX_TICK_MAGNITUDE: u128 = 88722883; // Ekubo
     pub const TWO_POW_128: u256 = 0x100000000000000000000000000000000;
     pub const TWO_POW_64: u256 = 0x10000000000000000;
@@ -642,11 +641,10 @@ mod ConcLiquidityVault {
             self.reng.end();
         }
 
-        /// @notice Updates relayer guard-rails. Values are hard-capped.
+        /// @notice Updates relayer guard-rails (governor decision; only sanity-bounded).
         fn set_rebalance_settings(ref self: ContractState, settings: RebalanceSettings) {
             self.common.assert_governor_role();
             assert(settings.max_slippage_bps <= MAX_REBALANCE_SLIPPAGE_BPS, 'slippage bps too high');
-            assert(settings.min_rebalance_interval <= MAX_REBALANCE_INTERVAL, 'interval too high');
             assert(settings.max_pool_tick_deviation <= MAX_TICK_MAGNITUDE, 'tick deviation too high');
             assert(settings.max_bounds_distance <= MAX_TICK_MAGNITUDE, 'bounds distance too high');
             self.rebalance_settings.write(settings);

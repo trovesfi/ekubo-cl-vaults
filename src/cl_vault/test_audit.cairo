@@ -616,7 +616,7 @@ pub mod test_audit {
     #[should_panic(expected: ('slippage bps too high',))]
     fn test_rebalance_settings_slippage_cap() {
         let vault = single_pool_vault();
-        settings_with(vault, 301, 10000, 300000, 0, 1, 1);
+        settings_with(vault, 10001, 10000, 300000, 0, 1, 1);
     }
     #[test]
     #[fork("mainnet_4707139")]
