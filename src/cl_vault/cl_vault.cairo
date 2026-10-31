@@ -373,7 +373,9 @@ mod ConcLiquidityVault {
             swapInfo1: AvnuMultiRouteSwap,
             swapInfo2: AvnuMultiRouteSwap
         ) {
+            self.common.assert_not_paused();
             self.common.assert_relayer_role();
+            let max_slippage_bps = self.rebalance_settings.read().max_slippage_bps;
 
             // claim rewards
             let (rewardToken, mut reward_amt) = self._ekubo_harvest(rewardsContract, claim, proof);
@@ -411,12 +413,17 @@ mod ConcLiquidityVault {
             let oracle = self._get_oracle_dispatcher();
             if (swapInfo1.token_from_amount > 0
                 && swapInfo1.token_from_address != swapInfo1.token_to_address) {
+                let amt_in = swapInfo1.token_from_amount;
                 token0_amt = swapInfo1.swap(oracle);
+                // always oracle-check (AVNU min_out is relayer-controlled)
+                assert_max_slippage(rewardToken, amt_in, token0, token0_amt, max_slippage_bps, oracle);
             }
             let mut token1_amt: u256 = swapInfo2.token_from_amount;
             if (swapInfo2.token_from_amount > 0
                 && swapInfo2.token_from_address != swapInfo2.token_to_address) {
-                    token1_amt = swapInfo2.swap(oracle);
+                let amt_in = swapInfo2.token_from_amount;
+                token1_amt = swapInfo2.swap(oracle);
+                assert_max_slippage(rewardToken, amt_in, token1, token1_amt, max_slippage_bps, oracle);
             }
 
             self

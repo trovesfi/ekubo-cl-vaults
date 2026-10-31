@@ -717,4 +717,23 @@ pub mod test_audit {
         settings_with(vault, 100, 1000, 300000, 0, E18 * 1000, E18 * 1000);
         rebalance_max(vault);
     }
+
+    // ============================================================================
+    // Harvest (H1)
+    // ============================================================================
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('Pausable: paused',))]
+    fn test_harvest_paused() {
+        let vault = single_pool_vault();
+        ICommonDispatcher { contract_address: vault.contract_address }.pause();
+        let claim = troves_clvaults::interfaces::IEkuboDistributor::Claim {
+            id: 0, claimee: vault.contract_address, amount: 0,
+        };
+        vault
+            .harvest(
+                constants::EKUBO_CORE(), claim, array![].span(), empty_swap(vault), empty_swap(vault),
+            );
+    }
 }
