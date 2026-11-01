@@ -285,4 +285,79 @@ pub mod test_invariants {
         let (g0, g1) = withdraw_as(vault, bob, shares);
         assert(value(g0, g1) * 1000 + 1_000_000 >= value(paid0, paid1) * 999, 'unfair after reset');
     }
+
+    // ------------------------------------------------------------------ adversarial: sandwiches
+
+    // attacker pushes the pool price (big swap through the vault's pool)
+    fn push_price(amount_strk: u256) {
+        let this = starknet::get_contract_address();
+        fund(this, amount_strk);
+        avnu_swap_self(strk(), xstrk(), amount_strk, pool_key_1());
+    }
+
+    // deposit_with_min(quote) protects a depositor from a price-manipulation sandwich
+    #[test]
+    #[feature("safe_dispatcher")]
+    #[fork("mainnet_4707139")]
+    fn test_deposit_sandwich_blocked_by_min_shares() {
+        let vault = setup_live_vault();
+        let victim = user(5);
+        fund(victim, 100 * E18);
+        let quote = vault.convert_to_shares(10 * E18, 10 * E18).shares;
+        push_price(1_000_000 * E18);
+        let after = vault.convert_to_shares(10 * E18, 10 * E18).shares;
+        println!("sandwich: quote {} -> {} after manipulation", quote, after);
+        assert(after * 100 < quote * 99, 'setup: manipulation too small');
+        approve_as(victim, xstrk(), vault.contract_address, 10 * E18);
+        approve_as(victim, strk(), vault.contract_address, 10 * E18);
+        let safe = IClVaultSafeDispatcher { contract_address: vault.contract_address };
+        start_cheat_caller_address(vault.contract_address, victim);
+        let res = safe.deposit_with_min(10 * E18, 10 * E18, victim, quote * 995 / 1000);
+        stop_cheat_caller_address(vault.contract_address);
+        match res {
+            Result::Ok(_) => { assert(after * 1000 >= quote * 995, 'min_shares not enforced'); },
+            Result::Err(e) => { assert(*e.at(0) == 'insufficient shares minted', 'unexpected revert'); },
+        }
+    }
+
+    // withdraw_with_min(quote) protects an exiting user from a sandwich
+    #[test]
+    #[feature("safe_dispatcher")]
+    #[fork("mainnet_4707139")]
+    fn test_withdraw_sandwich_blocked_by_min_amounts() {
+        let vault = setup_live_vault();
+        let alice: ContractAddress = 0xA11CE.try_into().unwrap();
+        let shares = bal(vault.contract_address, alice);
+        let quote = vault.convert_to_assets(shares);
+        push_price(1_000_000 * E18);
+        let after = vault.convert_to_assets(shares);
+        println!(
+            "withdraw sandwich: quote {}/{} -> {}/{}",
+            quote.total_amount0,
+            quote.total_amount1,
+            after.total_amount0,
+            after.total_amount1,
+        );
+        assert(after.total_amount0 * 100 < quote.total_amount0 * 99, 'setup: manipulation too small');
+        let safe = IClVaultSafeDispatcher { contract_address: vault.contract_address };
+        start_cheat_caller_address(vault.contract_address, alice);
+        let res = safe
+            .withdraw_with_min(
+                shares, alice, quote.total_amount0 * 999 / 1000, quote.total_amount1 * 999 / 1000,
+            );
+        stop_cheat_caller_address(vault.contract_address);
+        match res {
+            Result::Ok(out) => {
+                assert(
+                    out.total_amount0 * 1000 >= quote.total_amount0 * 999
+                        && out.total_amount1 * 1000 >= quote.total_amount1 * 999,
+                    'min amounts not enforced',
+                );
+            },
+            Result::Err(e) => {
+                let r = *e.at(0);
+                assert(r == 'insufficient amount0' || r == 'insufficient amount1', 'unexpected revert');
+            },
+        }
+    }
 }
