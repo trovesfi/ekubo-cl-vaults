@@ -102,7 +102,8 @@ async function declareAndDeployConcLiquidityVault(
     await deployContract("ConcLiquidityVault", class_hash, {
         name: byteArray.byteArrayFromString(name),
         symbol: byteArray.byteArrayFromString(symbol),
-        access_control: accessControl,
+        // StarkWare roles: governance admin (and security admin) — should be the timelock
+        governance_admin: process.env.CL_VAULT_GOVERNANCE_ADMIN || accessControl,
         ekubo_positions_contract: EKUBO_POSITIONS,
         ekubo_positions_nft: EKUBO_POSITIONS_NFT,
         ekubo_core: EKUBO_CORE,
@@ -110,7 +111,11 @@ async function declareAndDeployConcLiquidityVault(
         fee_settings: feeSettings,
         init_values: initValues,
         managed_pools: managedPools,
-        min_timelock_delay: CL_VAULT_MIN_TIMELOCK_DELAY
+        min_timelock_delay: CL_VAULT_MIN_TIMELOCK_DELAY,
+        // allowlisted timelock classes + delay getter selector, e.g.
+        // [{class_hash: <OZ TimelockController class>, delay_selector: selector('get_min_delay')},
+        //  {class_hash: <StarkWare MultiExecutor class>, delay_selector: selector('get_execution_delay')}]
+        allowed_timelocks: JSON.parse(process.env.CL_VAULT_ALLOWED_TIMELOCKS || '[]')
     }, symbol);
 }
 

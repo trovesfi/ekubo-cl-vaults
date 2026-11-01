@@ -52,7 +52,7 @@ mod V1V2Migration {
     use starknet::get_contract_address;
     use super::RoleHolders;
     use troves_clvaults::cl_vault::interface::{
-        IClVaultDispatcher, IClVaultDispatcherTrait, MaxUnusedBalances, RebalanceSettings
+        IClVaultDispatcher, IClVaultDispatcherTrait, MaxUnusedBalances, RebalanceSettings, TimelockClass
     };
     use troves_clvaults::interfaces::IEkuboCore::{Bounds, PoolKey};
     use super::IClVaultV1DispatcherTrait;
@@ -100,7 +100,8 @@ mod V1V2Migration {
             new_class_hash: ClassHash,
             oracle: ContractAddress,
             min_timelock_delay: u64,
-            role_holders: RoleHolders
+            role_holders: RoleHolders,
+            allowed_timelocks: Array<TimelockClass>
         ) {
             self._assert_owner();
 
@@ -163,7 +164,11 @@ mod V1V2Migration {
             roles.register_security_agent(role_holders.security_agent);
             roles.register_security_governor(role_holders.security_governor);
 
-            // 5) from now on governor calls must come from a timelock
+            // 5) from now on governor calls must come from an allowlisted timelock
+            assert(allowed_timelocks.len() > 0, 'no timelock class');
+            for t in allowed_timelocks.span() {
+                new_vault_dispatcher.set_timelock_class(*t.class_hash, *t.delay_selector);
+            };
             new_vault_dispatcher.set_min_timelock_delay(min_timelock_delay);
             assert(new_vault_dispatcher.get_min_timelock_delay() == min_timelock_delay, 'timelock delay not set');
 

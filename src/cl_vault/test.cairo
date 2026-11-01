@@ -234,6 +234,7 @@ pub mod test_cl_vault_final {
         init_values.serialize(ref calldata);
         managed_pools.serialize(ref calldata);
         calldata.append(test_utils::TEST_TIMELOCK_DELAY.into());
+        test_utils::test_timelock_classes().serialize(ref calldata);
         
         let (address, _) = clVault.deploy(@calldata).expect('ClVault deploy failed');
         test_utils::setup_roles(address);

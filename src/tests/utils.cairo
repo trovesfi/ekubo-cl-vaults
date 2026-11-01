@@ -1,7 +1,7 @@
 use snforge_std::{
     declare, ContractClassTrait, start_cheat_caller_address, stop_cheat_caller_address,
 };
-use snforge_std::{DeclareResultTrait, start_mock_call, test_address};
+use snforge_std::{DeclareResultTrait, start_mock_call, test_address, get_class_hash};
 use starknet::{ContractAddress, get_contract_address};
 use starkware_utils::components::roles::interface::{IRolesDispatcher, IRolesDispatcherTrait};
 use troves_clvaults::helpers::constants;
@@ -40,4 +40,13 @@ pub const TEST_TIMELOCK_DELAY: u64 = 86400;
 /// Makes the test contract (holder of all roles) look like an OZ timelock with the given delay.
 pub fn mock_timelock(delay: u64) {
     start_mock_call(test_address(), selector!("get_min_delay"), delay);
+}
+
+/// Constructor arg: allow the test contract's class as a timelock (delay via mocked get_min_delay).
+pub fn test_timelock_classes() -> Array<troves_clvaults::cl_vault::interface::TimelockClass> {
+    array![
+        troves_clvaults::cl_vault::interface::TimelockClass {
+            class_hash: get_class_hash(test_address()), delay_selector: selector!("get_min_delay"),
+        },
+    ]
 }

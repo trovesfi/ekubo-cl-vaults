@@ -76,6 +76,7 @@ mod test_v1_v2_migration {
                 troves_clvaults::tests::utils::VESU_ORACLE(),
                 86400,
                 h,
+                troves_clvaults::tests::utils::test_timelock_classes(),
             );
         stop_cheat_caller_address(migration_address);
 

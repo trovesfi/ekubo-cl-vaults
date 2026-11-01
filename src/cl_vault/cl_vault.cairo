@@ -1,11 +1,14 @@
 #[starknet::contract]
 mod ConcLiquidityVault {
     use starknet::{
-        storage::{StoragePointerReadAccess, StoragePointerWriteAccess, Vec, VecTrait, MutableVecTrait},
+        storage::{
+            StoragePointerReadAccess, StoragePointerWriteAccess, Vec, VecTrait, MutableVecTrait, Map,
+            StorageMapReadAccess, StorageMapWriteAccess,
+        },
+        ClassHash, SyscallResultTrait,
         ContractAddress, get_contract_address, get_caller_address, get_block_timestamp,
     };
     use core::num::traits::Sqrt;
-    use openzeppelin::interfaces::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait};
     use openzeppelin::interfaces::accesscontrol::{IAccessControlDispatcher, IAccessControlDispatcherTrait};
     use openzeppelin::security::reentrancyguard::ReentrancyGuardComponent;
     use openzeppelin::introspection::src5::SRC5Component;
@@ -130,6 +133,9 @@ mod ConcLiquidityVault {
         // governor/admin callers must be timelocks with get_min_delay() >= this (0 = not enforced,
         // only possible on vaults upgraded from v1 until the migration sets it)
         min_timelock_delay: u64,
+        // allowlisted timelock classes -> selector of their delay getter (0 = not allowed), e.g.
+        // OZ TimelockController: get_min_delay, StarkWare MultiExecutor: get_execution_delay
+        allowed_timelock_classes: Map<ClassHash, felt252>,
     }
 
     #[event]
@@ -160,6 +166,7 @@ mod ConcLiquidityVault {
         RebalanceSettings: RebalanceSettings,
         OracleUpdated: OracleUpdated,
         MinTimelockDelayUpdated: MinTimelockDelayUpdated,
+        TimelockClassUpdated: TimelockClassUpdated,
         Harvest: HarvestEvent,
         PoolUpdated: PoolUpdated,
         EkuboPositionUpdated: EkuboPositionUpdated,
@@ -179,7 +186,12 @@ mod ConcLiquidityVault {
         init_values: InitValues,
         managed_pools: Array<ManagedPool>,
         min_timelock_delay: u64,
+        allowed_timelocks: Array<TimelockClass>,
     ) {
+        assert(allowed_timelocks.len() > 0, 'no timelock class');
+        for t in allowed_timelocks.span() {
+            self._set_timelock_class(*t.class_hash, *t.delay_selector);
+        };
         assert(min_timelock_delay > 0, 'invalid min timelock delay');
         self.min_timelock_delay.write(min_timelock_delay);
         self.erc20.initializer(name, symbol);
@@ -211,6 +223,13 @@ mod ConcLiquidityVault {
         self.max_unused_balances_on_rebalance.write(MaxUnusedBalances { token0: 0, token1: 0 });
         // conservative defaults; governor is expected to tune per vault
         self.rebalance_settings.write(default_rebalance_settings());
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct TimelockClassUpdated {
+        #[key]
+        class_hash: ClassHash,
+        delay_selector: felt252, // 0 = removed
     }
 
     #[derive(Drop, starknet::Event)]
@@ -778,6 +797,23 @@ mod ConcLiquidityVault {
             self.min_timelock_delay.read()
         }
 
+        /// @notice Allow (delay_selector != 0) or remove (0) a timelock class. The caller's own
+        /// class must still be allowed afterwards, so the governor cannot lock itself out.
+        fn set_timelock_class(ref self: ContractState, class_hash: ClassHash, delay_selector: felt252) {
+            self.roles.only_app_governor();
+            self._assert_timelocked_caller();
+            self._set_timelock_class(class_hash, delay_selector);
+            if self.min_timelock_delay.read() != 0 {
+                let own = starknet::syscalls::get_class_hash_at_syscall(get_caller_address())
+                    .unwrap_syscall();
+                assert(self.allowed_timelock_classes.read(own) != 0, 'would lock out caller');
+            }
+        }
+
+        fn get_timelock_class_selector(self: @ContractState, class_hash: ClassHash) -> felt252 {
+            self.allowed_timelock_classes.read(class_hash)
+        }
+
         fn get_rebalance_settings(self: @ContractState) -> RebalanceSettings {
             self.rebalance_settings.read()
         }
@@ -797,11 +833,21 @@ mod ConcLiquidityVault {
             if required == 0 {
                 return;
             }
-            let delay = ITimelockDispatcher {
-                contract_address: get_caller_address()
-            }
-                .get_min_delay();
+            let caller = get_caller_address();
+            let class_hash = starknet::syscalls::get_class_hash_at_syscall(caller).unwrap_syscall();
+            let selector = self.allowed_timelock_classes.read(class_hash);
+            assert(selector != 0, 'timelock class not allowed');
+            let res = starknet::syscalls::call_contract_syscall(caller, selector, array![].span())
+                .unwrap_syscall();
+            let delay: u64 = (*res.at(0)).try_into().expect('invalid timelock delay');
             assert(delay >= required, 'timelock delay too short');
+        }
+
+        fn _set_timelock_class(ref self: ContractState, class_hash: ClassHash, delay_selector: felt252) {
+            let ch: felt252 = class_hash.into();
+            assert(ch != 0, 'invalid class hash');
+            self.allowed_timelock_classes.write(class_hash, delay_selector);
+            self.emit(TimelockClassUpdated { class_hash, delay_selector });
         }
 
         fn _assert_valid_fee_settings(self: @ContractState, fee_settings: FeeSettings) {

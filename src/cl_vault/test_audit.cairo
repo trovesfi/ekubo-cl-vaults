@@ -30,6 +30,7 @@ pub mod test_audit {
     use ekubo::types::bounds::Bounds as EkBounds;
     use openzeppelin::utils::serde::SerializedAppend;
     use troves_clvaults::tests::utils as test_utils;
+    use starkware_utils::components::roles::interface::{IRolesDispatcher, IRolesDispatcherTrait};
     use starkware_utils::components::replaceability::interface::{
         IReplaceableDispatcher, IReplaceableDispatcherTrait, ImplementationData,
     };
@@ -98,6 +99,7 @@ pub mod test_audit {
         init_values.serialize(ref calldata);
         pools.serialize(ref calldata);
         calldata.append(test_utils::TEST_TIMELOCK_DELAY.into());
+        test_utils::test_timelock_classes().serialize(ref calldata);
         let (address, _) = cls.deploy(@calldata).expect('ClVault deploy failed');
         test_utils::setup_roles(address);
         test_utils::mock_timelock(test_utils::TEST_TIMELOCK_DELAY);
@@ -1180,4 +1182,61 @@ pub mod test_audit {
 
     // NB: constructor `min_timelock_delay > 0` is not unit-tested: snforge 0.54 aborts the
     // test on any constructor revert (not catchable via deploy() or deploy_syscall).
+
+    // ============================================================================
+    // Timelock class pinning
+    // ============================================================================
+
+    // a contract with a different class (the mock oracle) acting as governor
+    fn foreign_governor(vault: IClVaultDispatcher) -> ContractAddress {
+        let other = mock_oracle(true).contract_address;
+        IRolesDispatcher { contract_address: vault.contract_address }.register_app_governor(other);
+        other
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('timelock class not allowed',))]
+    fn test_governor_class_not_allowed() {
+        let vault = single_pool_vault();
+        let other = foreign_governor(vault);
+        snforge_std::start_mock_call(other, selector!("get_min_delay"), test_utils::TEST_TIMELOCK_DELAY);
+        start_cheat_caller_address(vault.contract_address, other);
+        vault.set_settings(fee(500));
+    }
+
+    // a StarkWare MultiExecutor-style timelock (get_execution_delay) once its class is allowed
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_allowed_class_with_custom_delay_getter() {
+        let vault = single_pool_vault();
+        let other = foreign_governor(vault);
+        vault.set_timelock_class(snforge_std::get_class_hash(other), selector!("get_execution_delay"));
+        snforge_std::start_mock_call(
+            other, selector!("get_execution_delay"), test_utils::TEST_TIMELOCK_DELAY,
+        );
+        start_cheat_caller_address(vault.contract_address, other);
+        vault.set_settings(fee(500));
+        assert(vault.get_fee_settings().fee_bps == 500, 'fee not set');
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('would lock out caller',))]
+    fn test_cannot_remove_own_timelock_class() {
+        let vault = single_pool_vault();
+        vault.set_timelock_class(snforge_std::get_class_hash(snforge_std::test_address()), 0);
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_remove_other_timelock_class() {
+        let vault = single_pool_vault();
+        let other = mock_oracle(true).contract_address;
+        let cls = snforge_std::get_class_hash(other);
+        vault.set_timelock_class(cls, selector!("get_min_delay"));
+        assert(vault.get_timelock_class_selector(cls) == selector!("get_min_delay"), 'not allowed');
+        vault.set_timelock_class(cls, 0);
+        assert(vault.get_timelock_class_selector(cls) == 0, 'not removed');
+    }
 }

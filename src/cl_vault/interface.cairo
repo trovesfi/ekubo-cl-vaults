@@ -91,6 +91,15 @@ pub struct RebalanceSettings {
     pub max_swap_amount1: u256,
 }
 
+/// A timelock implementation allowed to act as governor, and the selector of its delay getter
+/// (returns u64 seconds), e.g. selector!("get_min_delay") for OZ TimelockController or
+/// selector!("get_execution_delay") for StarkWare MultiExecutor/DelayedExecutor.
+#[derive(Drop, Copy, Serde)]
+pub struct TimelockClass {
+    pub class_hash: starknet::ClassHash,
+    pub delay_selector: felt252,
+}
+
 #[derive(Drop, Copy, Serde, starknet::Store, starknet::Event)]
 pub struct RangeInstruction {
     pub liquidity_mint: u128,
@@ -269,4 +278,8 @@ pub trait IClVault<TContractState> {
     // governor (timelocked): min delay required from governor/admin timelocks (> 0)
     fn set_min_timelock_delay(ref self: TContractState, min_delay: u64);
     fn get_min_timelock_delay(self: @TContractState) -> u64;
+    // governor (timelocked): allow (selector != 0) / remove (0) a timelock class; caller's own
+    // class must remain allowed
+    fn set_timelock_class(ref self: TContractState, class_hash: starknet::ClassHash, delay_selector: felt252);
+    fn get_timelock_class_selector(self: @TContractState, class_hash: starknet::ClassHash) -> felt252;
 }
