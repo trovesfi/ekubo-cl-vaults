@@ -1390,4 +1390,55 @@ pub mod test_audit {
         // only the user's liquidity left the range (no re-deposit of fees)
         assert(vault.total_liquidity_per_pool(0) < liq_before, 'liquidity not reduced');
     }
+
+    fn accrue_fees(vault: IClVaultDispatcher) {
+        let pool = vault.get_managed_pool(0);
+        let this = get_contract_address();
+        fund(this, 2000 * E18);
+        avnu_swap_self(strk(), xstrk(), 500 * E18, pool.pool_key);
+        avnu_swap_self(xstrk(), strk(), 400 * E18, pool.pool_key);
+    }
+
+    // handle_fees compounds only near the oracle price
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_handle_fees_compounds_near_oracle() {
+        let vault = setup_live_vault();
+        accrue_fees(vault);
+        let liq = vault.total_liquidity_per_pool(0);
+        vault.handle_fees(0);
+        assert(vault.total_liquidity_per_pool(0) > liq, 'fees not compounded');
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_handle_fees_keeps_idle_when_pool_off_oracle() {
+        let vault = setup_live_vault();
+        accrue_fees(vault);
+        // pool tick is ~4k ticks off the oracle at this block: a 1000-tick band excludes it
+        settings_with(vault, 100, 1000, 300000, 0, E18 * 1000, E18 * 1000);
+        let liq = vault.total_liquidity_per_pool(0);
+        let i0 = bal(xstrk(), vault.contract_address);
+        let i1 = bal(strk(), vault.contract_address);
+        vault.handle_fees(0);
+        assert(vault.total_liquidity_per_pool(0) == liq, 'compounded off-oracle');
+        assert(
+            bal(xstrk(), vault.contract_address) > i0 || bal(strk(), vault.contract_address) > i1,
+            'fees not collected',
+        );
+    }
+
+    // an invalid oracle must not block handle_fees (fees stay idle)
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_handle_fees_with_invalid_oracle_keeps_idle() {
+        let vault = setup_live_vault();
+        accrue_fees(vault);
+        let mock = mock_oracle(true);
+        vault.set_oracle(mock.contract_address);
+        mock.set_price(strk(), 1, false);
+        let liq = vault.total_liquidity_per_pool(0);
+        vault.handle_fees(0);
+        assert(vault.total_liquidity_per_pool(0) == liq, 'compounded on invalid oracle');
+    }
 }

@@ -912,6 +912,21 @@ mod ConcLiquidityVault {
         fn _oracle_tick(self: @ContractState, pool_key: PoolKey) -> i129 {
             let p0 = self._price(pool_key.token0);
             let p1 = self._price(pool_key.token1);
+            self._tick_from_prices(pool_key, p0, p1)
+        }
+
+        /// Non-reverting variant: None if either price is invalid (stale / too few sources / 0).
+        fn _try_oracle_tick(self: @ContractState, pool_key: PoolKey) -> Option<i129> {
+            let oracle = IVesuOracleDispatcher { contract_address: self.oracle.read() };
+            let a = oracle.price(pool_key.token0);
+            let b = oracle.price(pool_key.token1);
+            if !a.is_valid || !b.is_valid || a.value == 0 || b.value == 0 {
+                return Option::None;
+            }
+            Option::Some(self._tick_from_prices(pool_key, a.value, b.value))
+        }
+
+        fn _tick_from_prices(self: @ContractState, pool_key: PoolKey, p0: u256, p1: u256) -> i129 {
             let dec0: u8 = ERC20Helper::decimals(pool_key.token0);
             let dec1: u8 = ERC20Helper::decimals(pool_key.token1);
             // ratio * 2^128 = p0 * 10^dec1 * 2^128 / (p1 * 10^dec0)   (512-bit intermediate)
@@ -925,6 +940,18 @@ mod ConcLiquidityVault {
             ekuboLibDispatcher().sqrt_ratio_to_tick(sqrt_ratio)
         }
 
+        /// True when the pool's spot tick is within max_pool_tick_deviation of a valid oracle tick.
+        fn _pool_near_oracle(self: @ContractState, pool_index: u64) -> bool {
+            let pool = self.managed_pools[pool_index].read();
+            match self._try_oracle_tick(pool.pool_key) {
+                Option::Some(oracle_tick) => {
+                    let pool_tick = self._get_pool_price(pool_index).tick;
+                    tick_distance(pool_tick, oracle_tick)
+                        <= self.rebalance_settings.read().max_pool_tick_deviation
+                },
+                Option::None => false,
+            }
+        }
 
         fn _handle_fees(ref self: ContractState, pool_index: u64) {
             let pool = self.managed_pools[pool_index].read();
@@ -940,20 +967,24 @@ mod ConcLiquidityVault {
                 return;
             }
 
-            // deposit fees
-            // @dev This action may leave some unused balances in the contract
-            // - This is taken care during rebalance calls
-            self._ekubo_deposit(this, fee0, fee1, this, pool_index, 0);
+            // Re-deposit only at a pool price close to the oracle (adding liquidity at a
+            // manipulated price loses value); otherwise, or if the oracle is invalid, the fees stay
+            // idle (still counted in the share price) until the next rebalance.
+            let deposit = self._pool_near_oracle(pool_index);
+            if deposit {
+                // @dev may leave some unused balances in the contract (redeployed on rebalance)
+                self._ekubo_deposit(this, fee0, fee1, this, pool_index, 0);
+            }
 
             self
                 .emit(
                     HandleFees {
                         token0_addr: pool.pool_key.token0,
                         token0_origin_bal: token_info.amount0.into(),
-                        token0_deposited: fee0,
+                        token0_deposited: if deposit { fee0 } else { 0 },
                         token1_addr: pool.pool_key.token1,
                         token1_origin_bal: token_info.amount1.into(),
-                        token1_deposited: fee1,
+                        token1_deposited: if deposit { fee1 } else { 0 },
                         pool_info: pool
                     }
                 );
