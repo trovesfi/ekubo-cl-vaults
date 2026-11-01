@@ -201,6 +201,8 @@ mod ConcLiquidityVault {
         self
             .ekubo_positions_contract
             .write(IEkuboDispatcher { contract_address: ekubo_positions_contract });
+        self.ekubo_positions_nft.write(ekubo_positions_nft);
+        self.ekubo_core.write(ekubo_core);
 
         // add all pools
         assert(managed_pools.len() != 0, 'empty pool list');
@@ -211,8 +213,6 @@ mod ConcLiquidityVault {
             i += 1;
         }
 
-        self.ekubo_positions_nft.write(ekubo_positions_nft);
-        self.ekubo_core.write(ekubo_core);
         self.oracle.write(oracle);
         self._assert_valid_fee_settings(fee_settings);
         self.fee_settings.write(fee_settings);
@@ -1159,6 +1159,13 @@ mod ConcLiquidityVault {
             if is_add {
                 // Add pool logic
                 assert_valid_bounds(pool.pool_key, pool.bounds);
+                // a pre-existing position NFT must belong to the vault: a foreign NFT would be
+                // counted in share pricing and make every withdraw revert (Ekubo auth check)
+                if pool.nft_id != 0 {
+                    let owner = IEkuboNFTDispatcher { contract_address: self.ekubo_positions_nft.read() }
+                        .ownerOf(pool.nft_id.into());
+                    assert(owner == get_contract_address(), 'nft not owned by vault');
+                }
                 // Check pool doesn't already exist
                 let existing_index = self._find_pool_index(pool.pool_key, pool.bounds);
                 assert(existing_index.is_none(), 'pool already exists');

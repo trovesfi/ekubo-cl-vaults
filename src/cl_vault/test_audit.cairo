@@ -1340,4 +1340,28 @@ pub mod test_audit {
         enable_governor(vault, tl, selector!("get_execution_delay"));
         oz_schedule_and_execute(tl, set_fee_call(vault, 700), test_utils::TEST_TIMELOCK_DELAY);
     }
+
+    // ============================================================================
+    // Review fixes
+    // ============================================================================
+
+    // a pool whose nft_id is not owned by the vault must be rejected (would mis-price shares and
+    // brick withdraws through Ekubo's auth check)
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('nft not owned by vault',))]
+    fn test_add_pool_foreign_nft_rejected() {
+        let vault = single_pool_vault();
+        // NFT #1 exists and is owned by someone else
+        vault.add_pool(ManagedPool { pool_key: pool_key_2(), bounds: bounds_2(), nft_id: 1 });
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_add_pool_own_nft_ok() {
+        let vault = setup_live_vault();
+        let own_nft = vault.get_managed_pool(0).nft_id;
+        vault.add_pool(ManagedPool { pool_key: pool_key_2(), bounds: bounds_2(), nft_id: own_nft });
+        assert(vault.get_managed_pools_len() == 2, 'pool not added');
+    }
 }
