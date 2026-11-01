@@ -31,8 +31,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Z3 proofs (share math, i129)
         run: |
-          python3 -m pip install --quiet -r formal/requirements.txt
-          python3 formal/share_math.py
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet -r formal/requirements.txt
+          .venv/bin/python formal/share_math.py
 
   fork-tests:
     runs-on: ubuntu-latest
