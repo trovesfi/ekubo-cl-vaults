@@ -44,18 +44,18 @@ pub mod test_audit {
     };
     use troves_clvaults::interfaces::IVesuOracle::{IVesuOracleDispatcher, IVesuOracleDispatcherTrait};
 
-    const E18: u256 = 1_000_000_000_000_000_000;
+    pub const E18: u256 = 1_000_000_000_000_000_000;
 
     // ---------------------------------------------------------------- setup helpers
 
-    fn xstrk() -> ContractAddress {
+    pub fn xstrk() -> ContractAddress {
         constants::XSTRK_ADDRESS()
     }
-    fn strk() -> ContractAddress {
+    pub fn strk() -> ContractAddress {
         constants::STRK_ADDRESS()
     }
 
-    fn pool_key_1() -> PoolKey {
+    pub fn pool_key_1() -> PoolKey {
         PoolKey {
             token0: xstrk(),
             token1: strk(),
@@ -65,7 +65,7 @@ pub mod test_audit {
         }
     }
 
-    fn pool_key_2() -> PoolKey {
+    pub fn pool_key_2() -> PoolKey {
         PoolKey {
             token0: xstrk(),
             token1: strk(),
@@ -75,15 +75,15 @@ pub mod test_audit {
         }
     }
 
-    fn bounds_1() -> Bounds {
+    pub fn bounds_1() -> Bounds {
         Bounds { lower: i129 { mag: 104000, sign: false }, upper: i129 { mag: 124000, sign: false } }
     }
 
-    fn bounds_2() -> Bounds {
+    pub fn bounds_2() -> Bounds {
         Bounds { lower: i129 { mag: 100000, sign: false }, upper: i129 { mag: 130000, sign: false } }
     }
 
-    fn deploy_vault(pools: Array<ManagedPool>) -> IClVaultDispatcher {
+    pub fn deploy_vault(pools: Array<ManagedPool>) -> IClVaultDispatcher {
         let cls = declare("ConcLiquidityVault").unwrap().contract_class();
         let name: ByteArray = "uCL_token";
         let symbol: ByteArray = "UCL";
@@ -110,11 +110,11 @@ pub mod test_audit {
         IClVaultDispatcher { contract_address: address }
     }
 
-    fn single_pool_vault() -> IClVaultDispatcher {
+    pub fn single_pool_vault() -> IClVaultDispatcher {
         deploy_vault(array![ManagedPool { pool_key: pool_key_1(), bounds: bounds_1(), nft_id: 0 }])
     }
 
-    fn two_pool_vault() -> IClVaultDispatcher {
+    pub fn two_pool_vault() -> IClVaultDispatcher {
         deploy_vault(
             array![
                 ManagedPool { pool_key: pool_key_1(), bounds: bounds_1(), nft_id: 0 },
@@ -124,7 +124,7 @@ pub mod test_audit {
     }
 
     // whale = Ekubo core (holds plenty of both tokens on the fork)
-    fn fund(user: ContractAddress, amount: u256) {
+    pub fn fund(user: ContractAddress, amount: u256) {
         let whale = constants::EKUBO_CORE();
         start_cheat_caller_address(strk(), whale);
         ERC20Helper::transfer(strk(), user, amount);
@@ -134,17 +134,17 @@ pub mod test_audit {
         stop_cheat_caller_address(xstrk());
     }
 
-    fn approve_as(user: ContractAddress, token: ContractAddress, spender: ContractAddress, amt: u256) {
+    pub fn approve_as(user: ContractAddress, token: ContractAddress, spender: ContractAddress, amt: u256) {
         start_cheat_caller_address(token, user);
         ERC20Helper::approve(token, spender, amt);
         stop_cheat_caller_address(token);
     }
 
-    fn bal(token: ContractAddress, who: ContractAddress) -> u256 {
+    pub fn bal(token: ContractAddress, who: ContractAddress) -> u256 {
         ERC20Helper::balanceOf(token, who)
     }
 
-    fn deposit_as(
+    pub fn deposit_as(
         vault: IClVaultDispatcher, user: ContractAddress, a0: u256, a1: u256, allowance: u256,
     ) -> u256 {
         approve_as(user, xstrk(), vault.contract_address, allowance);
@@ -155,7 +155,7 @@ pub mod test_audit {
         shares
     }
 
-    fn empty_swap(vault: IClVaultDispatcher) -> AvnuMultiRouteSwap {
+    pub fn empty_swap(vault: IClVaultDispatcher) -> AvnuMultiRouteSwap {
         AvnuMultiRouteSwap {
             token_from_address: xstrk(),
             token_from_amount: 0,
@@ -170,7 +170,7 @@ pub mod test_audit {
     }
 
     // Mint as much liquidity as the vault's idle balances allow, split evenly across pools.
-    fn rebalance_max(vault: IClVaultDispatcher) {
+    pub fn rebalance_max(vault: IClVaultDispatcher) {
         let pools = vault.get_managed_pools();
         let n: u256 = pools.len().into();
         let this_bal0 = bal(xstrk(), vault.contract_address);
@@ -199,7 +199,7 @@ pub mod test_audit {
     }
 
     // Vault value in token1 units at the pool-1 spot price (positions + idle).
-    fn vault_value_in_token1(vault: IClVaultDispatcher) -> u256 {
+    pub fn vault_value_in_token1(vault: IClVaultDispatcher) -> u256 {
         let positions = vault.get_positions();
         let idle0 = bal(xstrk(), vault.contract_address);
         let idle1 = bal(strk(), vault.contract_address);
@@ -210,7 +210,7 @@ pub mod test_audit {
     }
 
     // Direct AVNU swap from the test contract (used to generate LP fees).
-    fn avnu_swap_self(from: ContractAddress, to: ContractAddress, amount: u256, key: PoolKey) {
+    pub fn avnu_swap_self(from: ContractAddress, to: ContractAddress, amount: u256, key: PoolKey) {
         let this = get_contract_address();
         ERC20Helper::approve(from, constants::AVNU_EX(), amount);
         let params: Array<felt252> = array![
@@ -232,7 +232,7 @@ pub mod test_audit {
     // C2: deposit must only pull what the depositor offered, and give fair shares
     // ============================================================================
 
-    fn setup_live_vault() -> IClVaultDispatcher {
+    pub fn setup_live_vault() -> IClVaultDispatcher {
         let vault = single_pool_vault();
         let alice: ContractAddress = 0xA11CE.try_into().unwrap();
         fund(alice, 100 * E18);
@@ -321,7 +321,7 @@ pub mod test_audit {
 
     // Attacker pool: xSTRK/STRK, unused fee tier, initialised at ~1e-4 STRK per xSTRK, with a
     // tiny amount of STRK spread down to MIN_TICK so it absorbs any amount of xSTRK.
-    fn attacker_pool_key() -> EkPoolKey {
+    pub fn attacker_pool_key() -> EkPoolKey {
         EkPoolKey {
             token0: xstrk(),
             token1: strk(),
@@ -331,7 +331,7 @@ pub mod test_audit {
         }
     }
 
-    fn setup_attacker_pool() -> (u64, EkBounds) {
+    pub fn setup_attacker_pool() -> (u64, EkBounds) {
         let key = attacker_pool_key();
         let core = ICoreDispatcher { contract_address: constants::EKUBO_CORE() };
         // tick -9_000_000 => price ~= 1.000001^-9e6 ~= 1.2e-4
@@ -348,7 +348,7 @@ pub mod test_audit {
         (id, bounds)
     }
 
-    fn drain_swap(vault: IClVaultDispatcher, amount: u256, min_out: u256) -> AvnuMultiRouteSwap {
+    pub fn drain_swap(vault: IClVaultDispatcher, amount: u256, min_out: u256) -> AvnuMultiRouteSwap {
         let key = attacker_pool_key();
         let params: Array<felt252> = array![
             key.token0.into(), key.token1.into(), key.fee.into(), key.tick_spacing.into(),
@@ -375,7 +375,7 @@ pub mod test_audit {
         }
     }
 
-    fn drain_swap_via(vault: IClVaultDispatcher, key: PoolKey, amount: u256) -> AvnuMultiRouteSwap {
+    pub fn drain_swap_via(vault: IClVaultDispatcher, key: PoolKey, amount: u256) -> AvnuMultiRouteSwap {
         let params: Array<felt252> = array![
             key.token0.into(), key.token1.into(), key.fee.into(), key.tick_spacing.into(),
             key.extension.into(), 10000000000000000000000000000000000000000000000000000000000000000000000,
@@ -401,7 +401,7 @@ pub mod test_audit {
         }
     }
 
-    fn burn_all_and_swap(vault: IClVaultDispatcher, swap: AvnuMultiRouteSwap) {
+    pub fn burn_all_and_swap(vault: IClVaultDispatcher, swap: AvnuMultiRouteSwap) {
         let pools = vault.get_managed_pools();
         let mut ins: Array<RangeInstruction> = array![];
         let mut i: u32 = 0;
@@ -606,7 +606,7 @@ pub mod test_audit {
     // Rebalance guard-rails (C1, H1, H2)
     // ============================================================================
 
-    fn settings_with(
+    pub fn settings_with(
         vault: IClVaultDispatcher,
         slippage: u32,
         pool_dev: u128,
@@ -628,7 +628,7 @@ pub mod test_audit {
             );
     }
 
-    fn move_bounds(vault: IClVaultDispatcher, new_bounds: Bounds, burn_all: bool) {
+    pub fn move_bounds(vault: IClVaultDispatcher, new_bounds: Bounds, burn_all: bool) {
         let pool = vault.get_managed_pool(0);
         let liq: u128 = vault.total_liquidity_per_pool(0).try_into().unwrap();
         let ins = array![
@@ -832,7 +832,7 @@ pub mod test_audit {
     // ============================================================================
 
     // mock oracle seeded with the live Vesu prices at the fork block
-    fn mock_oracle(valid: bool) -> IMockVesuOracleDispatcher {
+    pub fn mock_oracle(valid: bool) -> IMockVesuOracleDispatcher {
         let cls = declare("MockVesuOracle").unwrap().contract_class();
         let (addr, _) = cls.deploy(@array![]).unwrap();
         let mock = IMockVesuOracleDispatcher { contract_address: addr };
@@ -930,7 +930,7 @@ pub mod test_audit {
     // Idle balances are part of the share price (M2) + min_shares + dead shares
     // ============================================================================
 
-    fn withdraw_all_as(vault: IClVaultDispatcher, user: ContractAddress) -> (u256, u256) {
+    pub fn withdraw_all_as(vault: IClVaultDispatcher, user: ContractAddress) -> (u256, u256) {
         let shares = bal(vault.contract_address, user);
         start_cheat_caller_address(vault.contract_address, user);
         let out = vault.withdraw(shares, user);
@@ -1067,7 +1067,7 @@ pub mod test_audit {
     // Timelock guard on governor / admin calls
     // ============================================================================
 
-    fn fee(bps: u256) -> FeeSettings {
+    pub fn fee(bps: u256) -> FeeSettings {
         FeeSettings { fee_bps: bps, fee_collector: constants::EKUBO_FEE_COLLECTOR() }
     }
 
@@ -1121,7 +1121,7 @@ pub mod test_audit {
         common.unpause();
     }
 
-    fn impl_data() -> ImplementationData {
+    pub fn impl_data() -> ImplementationData {
         let cls = *declare("ConcLiquidityVault").unwrap().contract_class().class_hash;
         ImplementationData { impl_hash: cls, eic_data: Option::None, final: false }
     }
@@ -1192,7 +1192,7 @@ pub mod test_audit {
     // ============================================================================
 
     // a contract with a different class (the mock oracle) acting as governor
-    fn foreign_governor(vault: IClVaultDispatcher) -> ContractAddress {
+    pub fn foreign_governor(vault: IClVaultDispatcher) -> ContractAddress {
         let other = mock_oracle(true).contract_address;
         IRolesDispatcher { contract_address: vault.contract_address }.register_app_governor(other);
         other
@@ -1248,13 +1248,13 @@ pub mod test_audit {
     // Real timelocks as governor: OZ TimelockController and StarkWare MultiExecutor
     // ============================================================================
 
-    fn set_fee_call(vault: IClVaultDispatcher, bps: u256) -> starknet::account::Call {
+    pub fn set_fee_call(vault: IClVaultDispatcher, bps: u256) -> starknet::account::Call {
         let mut cd: Array<felt252> = array![];
         fee(bps).serialize(ref cd);
         starknet::account::Call { to: vault.contract_address, selector: selector!("set_settings"), calldata: cd.span() }
     }
 
-    fn deploy_oz_timelock(min_delay: u64) -> ContractAddress {
+    pub fn deploy_oz_timelock(min_delay: u64) -> ContractAddress {
         let this = get_contract_address();
         let cls = declare("TimelockController").unwrap().contract_class();
         let mut cd: Array<felt252> = array![];
@@ -1267,7 +1267,7 @@ pub mod test_audit {
         addr
     }
 
-    fn deploy_multi_executor(delay: u64) -> ContractAddress {
+    pub fn deploy_multi_executor(delay: u64) -> ContractAddress {
         let this = get_contract_address();
         let cls = declare("MultiExecutor").unwrap().contract_class();
         let mut cd: Array<felt252> = array![];
@@ -1282,12 +1282,12 @@ pub mod test_audit {
     }
 
     // allow the timelock's class (via the mocked test governor) and make it APP_GOVERNOR
-    fn enable_governor(vault: IClVaultDispatcher, gov: ContractAddress, delay_selector: felt252) {
+    pub fn enable_governor(vault: IClVaultDispatcher, gov: ContractAddress, delay_selector: felt252) {
         vault.set_timelock_class(snforge_std::get_class_hash(gov), delay_selector);
         IRolesDispatcher { contract_address: vault.contract_address }.register_app_governor(gov);
     }
 
-    fn oz_schedule_and_execute(timelock: ContractAddress, call: starknet::account::Call, delay: u64) {
+    pub fn oz_schedule_and_execute(timelock: ContractAddress, call: starknet::account::Call, delay: u64) {
         let tl = ITimelockDispatcher { contract_address: timelock };
         start_cheat_block_timestamp(timelock, 1_800_000_000);
         tl.schedule(call, 0, 0, delay);

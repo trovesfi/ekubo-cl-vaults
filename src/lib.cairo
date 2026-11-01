@@ -36,6 +36,8 @@ pub mod cl_vault {
     pub mod test;
     #[cfg(test)]
     pub mod test_audit;
+    #[cfg(test)]
+    pub mod test_invariants;
 }
 
 #[cfg(test)]
