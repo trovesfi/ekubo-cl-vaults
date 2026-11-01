@@ -79,6 +79,7 @@ mod test_v1_v2_migration {
                 h,
                 troves_clvaults::tests::utils::test_timelock_classes(),
                 InitValues { init0: 1_000_000_000_000_000_000, init1: 1_100_000_000_000_000_000 },
+                troves_clvaults::tests::utils::test_rebalance_settings(),
             );
         stop_cheat_caller_address(migration_address);
 

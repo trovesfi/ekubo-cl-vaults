@@ -102,7 +102,8 @@ mod V1V2Migration {
             min_timelock_delay: u64,
             role_holders: RoleHolders,
             allowed_timelocks: Array<TimelockClass>,
-            init_values: InitValues
+            init_values: InitValues,
+            rebalance_settings: RebalanceSettings
         ) {
             self._assert_owner();
 
@@ -128,18 +129,8 @@ mod V1V2Migration {
             // 3) configure (timelock guard is not enforced yet: min_timelock_delay == 0)
             new_vault_dispatcher
                 .set_max_unused_balances_on_rebalance(MaxUnusedBalances { token0: 0, token1: 0 });
-            // relayer guard-rails are new storage (zero = everything blocked): conservative defaults
-            new_vault_dispatcher
-                .set_rebalance_settings(
-                    RebalanceSettings {
-                        max_slippage_bps: 100,
-                        max_pool_tick_deviation: 10000,
-                        max_bounds_distance: 300000,
-                        min_rebalance_interval: 0,
-                        max_swap_amount0: core::num::traits::Bounded::<u256>::MAX,
-                        max_swap_amount1: core::num::traits::Bounded::<u256>::MAX,
-                    }
-                );
+            // relayer guard-rails are new storage (zero = everything blocked): explicit values
+            new_vault_dispatcher.set_rebalance_settings(rebalance_settings);
             let fee_settings = new_vault_dispatcher.get_fee_settings();
             assert(fee_settings.fee_bps <= 10000, 'invalid fee settings');
             new_vault_dispatcher

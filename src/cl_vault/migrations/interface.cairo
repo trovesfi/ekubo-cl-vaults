@@ -1,6 +1,6 @@
 use starknet::{ContractAddress, ClassHash};
 use troves_clvaults::cl_vault::migrations::v1_v2::RoleHolders;
-use troves_clvaults::cl_vault::interface::{TimelockClass, InitValues};
+use troves_clvaults::cl_vault::interface::{TimelockClass, InitValues, RebalanceSettings};
 
 #[starknet::interface]
 pub trait IMigration<TContractState> {
@@ -12,6 +12,7 @@ pub trait IMigration<TContractState> {
         min_timelock_delay: u64,
         role_holders: RoleHolders,
         allowed_timelocks: Array<TimelockClass>,
-        init_values: InitValues
+        init_values: InitValues,
+        rebalance_settings: RebalanceSettings
     );
 }

@@ -187,6 +187,7 @@ mod ConcLiquidityVault {
         managed_pools: Array<ManagedPool>,
         min_timelock_delay: u64,
         allowed_timelocks: Array<TimelockClass>,
+        rebalance_settings: RebalanceSettings,
     ) {
         assert(allowed_timelocks.len() > 0, 'no timelock class');
         for t in allowed_timelocks.span() {
@@ -221,8 +222,9 @@ mod ConcLiquidityVault {
         self.init_values.write(init_values);
         // Initialize max unused balances to 0 (disabled by default)
         self.max_unused_balances_on_rebalance.write(MaxUnusedBalances { token0: 0, token1: 0 });
-        // conservative defaults; governor is expected to tune per vault
-        self.rebalance_settings.write(default_rebalance_settings());
+        // explicit per-vault relayer guard-rails (no silent defaults)
+        assert_valid_rebalance_settings(rebalance_settings);
+        self.rebalance_settings.write(rebalance_settings);
     }
 
     #[derive(Drop, starknet::Event)]
@@ -242,15 +244,10 @@ mod ConcLiquidityVault {
         oracle: ContractAddress,
     }
 
-    fn default_rebalance_settings() -> RebalanceSettings {
-        RebalanceSettings {
-            max_slippage_bps: 100, // 1%
-            max_pool_tick_deviation: 10000, // ~1% (1 tick ~= 1e-6 relative price)
-            max_bounds_distance: 300000, // ~35%
-            min_rebalance_interval: 0,
-            max_swap_amount0: core::num::traits::Bounded::<u256>::MAX,
-            max_swap_amount1: core::num::traits::Bounded::<u256>::MAX,
-        }
+    fn assert_valid_rebalance_settings(settings: RebalanceSettings) {
+        assert(settings.max_slippage_bps <= MAX_REBALANCE_SLIPPAGE_BPS, 'slippage bps too high');
+        assert(settings.max_pool_tick_deviation <= MAX_TICK_MAGNITUDE, 'tick deviation too high');
+        assert(settings.max_bounds_distance <= MAX_TICK_MAGNITUDE, 'bounds distance too high');
     }
 
     /// floor(a * b / c) with a 512-bit intermediate; reverts if the result exceeds u256.
@@ -698,9 +695,7 @@ mod ConcLiquidityVault {
         fn set_rebalance_settings(ref self: ContractState, settings: RebalanceSettings) {
             self.roles.only_app_governor();
             self._assert_timelocked_caller();
-            assert(settings.max_slippage_bps <= MAX_REBALANCE_SLIPPAGE_BPS, 'slippage bps too high');
-            assert(settings.max_pool_tick_deviation <= MAX_TICK_MAGNITUDE, 'tick deviation too high');
-            assert(settings.max_bounds_distance <= MAX_TICK_MAGNITUDE, 'bounds distance too high');
+            assert_valid_rebalance_settings(settings);
             self.rebalance_settings.write(settings);
             self.emit(settings);
         }

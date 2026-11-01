@@ -50,3 +50,15 @@ pub fn test_timelock_classes() -> Array<troves_clvaults::cl_vault::interface::Ti
         },
     ]
 }
+
+/// Guard-rails used by tests (deploy-time argument; production values are a per-vault decision).
+pub fn test_rebalance_settings() -> troves_clvaults::cl_vault::interface::RebalanceSettings {
+    troves_clvaults::cl_vault::interface::RebalanceSettings {
+        max_slippage_bps: 100,
+        max_pool_tick_deviation: 10000,
+        max_bounds_distance: 300000,
+        min_rebalance_interval: 0,
+        max_swap_amount0: core::num::traits::Bounded::<u256>::MAX,
+        max_swap_amount1: core::num::traits::Bounded::<u256>::MAX,
+    }
+}

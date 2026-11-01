@@ -3,12 +3,12 @@
   "profile": "release",
   "contracts": {
     "ConcLiquidityVault": {
-      "class_hash": "0x28cdcb18c24c269565713eac4ea7c44f3e6c68cd879eb799fd89d54fe04703f",
-      "compiled_class_hash": "0x73e44b6cfb0fb28862825a7714b2cee286f6afecc3403ae0d4ed8d12bfdc608"
+      "class_hash": "0x4c6347f67055d1381fa57af8471cbe4e21bc14ac812e7203b02600f9a4ba996",
+      "compiled_class_hash": "0x6c1350df2a138566061b5d03de8db01f7889df99a1a2c143d68e42fd12f21fd"
     },
     "V1V2Migration": {
-      "class_hash": "0x26e13dba3f0b69502f2bec09d8c1b799d6d64b23d1d8f1e0daee478d4d4e71a",
-      "compiled_class_hash": "0x4caf7b5cabee88c561f57b42301eb860e7b59e35a5f58d3f2b7e137f45705bb"
+      "class_hash": "0x61e316bc282a2ecf95cd0695015d9aaea84d714b64c9a61028cdedd16bf1aa4",
+      "compiled_class_hash": "0x7f4f2c892ef891b9ed5a0a3d365148774ff43191a7456e2e5f5f1b433d2948b"
     },
     "TimelockController": {
       "class_hash": "0x139d29867efccb158b38ee8d10ba25e9e5f26943ec364741a18117d722f6750",

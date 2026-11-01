@@ -123,7 +123,11 @@ async function declareAndDeployConcLiquidityVault(
         // class hashes computed from this build; override with CL_VAULT_ALLOWED_TIMELOCKS (JSON)
         allowed_timelocks: process.env.CL_VAULT_ALLOWED_TIMELOCKS
             ? JSON.parse(process.env.CL_VAULT_ALLOWED_TIMELOCKS)
-            : allowedTimelockClasses()
+            : allowedTimelockClasses(),
+        // relayer guard-rails, required (no contract defaults), e.g.
+        // {"max_slippage_bps":30,"max_pool_tick_deviation":2000,"max_bounds_distance":200000,
+        //  "min_rebalance_interval":3600,"max_swap_amount0":"<wei>","max_swap_amount1":"<wei>"}
+        rebalance_settings: JSON.parse(requireEnv("CL_VAULT_REBALANCE_SETTINGS"))
     }, symbol);
 }
 
