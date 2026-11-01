@@ -2,23 +2,20 @@
 name = "troves_clvaults"
 version = "2.0.0"
 edition = "2023_11"
+cairo-version = "2.18.0"
 
 # See more keys and their definitions at https://docs.swmansion.com/scarb/docs/reference/manifest.html
 
 [dependencies]
-alexandria_math = { git = "https://github.com/keep-starknet-strange/alexandria.git", tag = "v0.8.0" } # later change to 2.9.2
-alexandria_storage = { git = "https://github.com/keep-starknet-strange/alexandria.git", tag = "v0.8.0" }
-alexandria_data_structures = { git = "https://github.com/keep-starknet-strange/alexandria.git", tag = "v0.8.0" }
-openzeppelin = "1.0.0"
-openzeppelin_introspection = "1.0.0"
+openzeppelin = "3.0.0"
 ekubo = { git = "https://github.com/EkuboProtocol/abis.git", rev = "f4a16b95967c5596d5a3cd4e0422bb9a2e3eb017"}
-starknet = ">=2.15.0" # cairo version
-# upgrade branch once pushed to main
-strkfarm_contracts = { git = "https://github.com/trovesfi/troves-contracts.git", branch = "ariyan/multi-range-cl-vault" }
+starknet = "2.18.0" # cairo version
+# StarkWare roles / pausable / replaceability / math (as used by starknet-staking), pinned by commit
+starkware_utils = { git = "https://github.com/starkware-libs/starkware-starknet-utils", rev = "3e2fd53d99e16c87f6cf2ced53b8c842a2d54a18" }
 
 [dev-dependencies]
-snforge_std = { git = "https://github.com/foundry-rs/starknet-foundry", tag = "v0.54.0" }
-assert_macros = "2.15.0"
+snforge_std = "0.63.0"
+assert_macros = "2.18.0"
 
 [[target.starknet-contract]]
 casm = true
@@ -32,7 +29,6 @@ coverage = "snforge test --save-trace-data --rerun-failed && snforge test --cove
 
 [[test]]
 name = "contracts_test"
-build-external-contracts = ["strkfarm_contracts::components::accessControl::AccessControl"]
 
 [[tool.snforge.fork]]
 name = "mainnet_4707139"
@@ -44,3 +40,5 @@ block_id.number = "4707139"
 unstable-add-statements-code-locations-debug-info = true
 unstable-add-statements-functions-debug-info = true
 inlining-strategy = "avoid"
+[tool.scarb]
+allow-prebuilt-plugins = ["snforge_std"]

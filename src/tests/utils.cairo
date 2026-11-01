@@ -3,19 +3,22 @@ use snforge_std::{
 };
 use snforge_std::{DeclareResultTrait, start_mock_call, test_address};
 use starknet::{ContractAddress, get_contract_address};
-use troves_clvaults::interfaces::IEkuboDistributor::{IEkuboDistributorDispatcher};
+use starkware_utils::components::roles::interface::{IRolesDispatcher, IRolesDispatcherTrait};
 use troves_clvaults::helpers::constants;
 use troves_clvaults::helpers::ERC20Helper;
 use troves_clvaults::helpers::pow;
 
-pub fn deploy_access_control() -> ContractAddress {
-    let cls = declare("AccessControl").unwrap().contract_class();
-
+/// Test contract = governance admin + security admin (seeded by the vault constructor).
+/// Give it every other role the tests exercise.
+pub fn setup_roles(vault: ContractAddress) {
     let this = get_contract_address();
-
-    let mut calldata: Array<felt252> = array![this.into(), this.into(), this.into(), this.into(),];
-    let (address, _) = cls.deploy(@calldata).expect('AC deploy failed');
-    return address;
+    let roles = IRolesDispatcher { contract_address: vault };
+    roles.register_app_role_admin(this);
+    roles.register_app_governor(this);
+    roles.register_operator(this);
+    roles.register_upgrade_governor(this);
+    roles.register_security_agent(this);
+    roles.register_security_governor(this);
 }
 
 pub fn load_strk(user: ContractAddress) {

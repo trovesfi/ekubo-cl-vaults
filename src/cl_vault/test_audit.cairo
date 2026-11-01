@@ -11,7 +11,7 @@ pub mod test_audit {
         RebalanceParams, RangeInstruction, RebalanceSettings,
     };
     use snforge_std::{start_cheat_block_timestamp};
-    use strkfarm_contracts::interfaces::common::{ICommonDispatcher, ICommonDispatcherTrait};
+    use starkware_utils::components::pausable::interface::{IPausableDispatcher as ICommonDispatcher, IPausableDispatcherTrait as ICommonDispatcherTrait};
     use snforge_std::{
         declare, ContractClassTrait, DeclareResultTrait, start_cheat_caller_address,
         stop_cheat_caller_address,
@@ -30,6 +30,9 @@ pub mod test_audit {
     use ekubo::types::bounds::Bounds as EkBounds;
     use openzeppelin::utils::serde::SerializedAppend;
     use troves_clvaults::tests::utils as test_utils;
+    use starkware_utils::components::replaceability::interface::{
+        IReplaceableDispatcher, IReplaceableDispatcherTrait, ImplementationData,
+    };
     use troves_clvaults::tests::mocks::{
         IMockReentrantDistributorDispatcher, IMockReentrantDistributorDispatcherTrait,
         IMockVesuOracleDispatcher, IMockVesuOracleDispatcherTrait,
@@ -76,7 +79,6 @@ pub mod test_audit {
     }
 
     fn deploy_vault(pools: Array<ManagedPool>) -> IClVaultDispatcher {
-        let access_control = test_utils::deploy_access_control();
         let cls = declare("ConcLiquidityVault").unwrap().contract_class();
         let name: ByteArray = "uCL_token";
         let symbol: ByteArray = "UCL";
@@ -87,7 +89,7 @@ pub mod test_audit {
         let mut calldata: Array<felt252> = array![];
         calldata.append_serde(name);
         calldata.append_serde(symbol);
-        calldata.append(access_control.into());
+        calldata.append(get_contract_address().into());
         calldata.append(constants::EKUBO_POSITIONS().into());
         calldata.append(constants::EKUBO_POSITIONS_NFT().into());
         calldata.append(constants::EKUBO_CORE().into());
@@ -97,6 +99,7 @@ pub mod test_audit {
         pools.serialize(ref calldata);
         calldata.append(test_utils::TEST_TIMELOCK_DELAY.into());
         let (address, _) = cls.deploy(@calldata).expect('ClVault deploy failed');
+        test_utils::setup_roles(address);
         test_utils::mock_timelock(test_utils::TEST_TIMELOCK_DELAY);
         IClVaultDispatcher { contract_address: address }
     }
@@ -635,7 +638,7 @@ pub mod test_audit {
 
     #[test]
     #[fork("mainnet_4707139")]
-    #[should_panic(expected: ('Pausable: paused',))]
+    #[should_panic(expected: ('PAUSED',))]
     fn test_rebalance_paused() {
         let vault = setup_live_vault();
         ICommonDispatcher { contract_address: vault.contract_address }.pause();
@@ -650,7 +653,7 @@ pub mod test_audit {
     }
     #[test]
     #[fork("mainnet_4707139")]
-    #[should_panic(expected: ('Access: Missing governor role',))]
+    #[should_panic(expected: "ONLY_APP_GOVERNOR")]
     fn test_rebalance_settings_governor_only() {
         let vault = single_pool_vault();
         start_cheat_caller_address(vault.contract_address, 0xBAD.try_into().unwrap());
@@ -757,7 +760,7 @@ pub mod test_audit {
 
     #[test]
     #[fork("mainnet_4707139")]
-    #[should_panic(expected: ('Pausable: paused',))]
+    #[should_panic(expected: ('PAUSED',))]
     fn test_harvest_paused() {
         let vault = single_pool_vault();
         ICommonDispatcher { contract_address: vault.contract_address }.pause();
@@ -864,7 +867,7 @@ pub mod test_audit {
 
     #[test]
     #[fork("mainnet_4707139")]
-    #[should_panic(expected: ('Access: Missing governor role',))]
+    #[should_panic(expected: "ONLY_APP_GOVERNOR")]
     fn test_set_oracle_governor_only() {
         let vault = single_pool_vault();
         let mock = mock_oracle(true);
@@ -1112,34 +1115,69 @@ pub mod test_audit {
         common.unpause();
     }
 
+    fn impl_data() -> ImplementationData {
+        let cls = *declare("ConcLiquidityVault").unwrap().contract_class().class_hash;
+        ImplementationData { impl_hash: cls, eic_data: Option::None, final: false }
+    }
+
+    // upgrades are delayed in-contract (StarkWare Replaceability, delay = min_timelock_delay)
     #[test]
     #[fork("mainnet_4707139")]
-    #[should_panic(expected: ('timelock delay too short',))]
-    fn test_upgrade_requires_timelock() {
+    #[should_panic(expected: "NOT_ENABLED_YET")]
+    fn test_upgrade_delay_enforced() {
         let vault = single_pool_vault();
-        let cls = *declare("ConcLiquidityVault").unwrap().contract_class().class_hash;
-        test_utils::mock_timelock(1);
-        ICommonDispatcher { contract_address: vault.contract_address }.upgrade(cls);
+        let up = IReplaceableDispatcher { contract_address: vault.contract_address };
+        let data = impl_data();
+        up.add_new_implementation(data);
+        up.replace_to(data);
     }
 
     #[test]
     #[fork("mainnet_4707139")]
-    fn test_upgrade_with_timelock_ok() {
+    fn test_upgrade_after_delay_ok() {
         let vault = single_pool_vault();
-        let cls = *declare("ConcLiquidityVault").unwrap().contract_class().class_hash;
-        ICommonDispatcher { contract_address: vault.contract_address }.upgrade(cls);
+        let up = IReplaceableDispatcher { contract_address: vault.contract_address };
+        assert(up.get_upgrade_delay() == test_utils::TEST_TIMELOCK_DELAY, 'upgrade delay');
+        let data = impl_data();
+        start_cheat_block_timestamp(vault.contract_address, 1_800_000_000);
+        up.add_new_implementation(data);
+        start_cheat_block_timestamp(
+            vault.contract_address, 1_800_000_000 + test_utils::TEST_TIMELOCK_DELAY,
+        );
+        up.replace_to(data);
         assert(vault.get_min_timelock_delay() == test_utils::TEST_TIMELOCK_DELAY, 'state lost');
     }
 
     #[test]
     #[fork("mainnet_4707139")]
-    #[should_panic(expected: ('Access: Missing admin role',))]
-    fn test_upgrade_admin_only() {
+    #[should_panic(expected: "ONLY_UPGRADE_GOVERNOR")]
+    fn test_upgrade_governor_only() {
         let vault = single_pool_vault();
-        let cls = *declare("ConcLiquidityVault").unwrap().contract_class().class_hash;
+        let data = impl_data();
         start_cheat_caller_address(vault.contract_address, 0xBAD.try_into().unwrap());
-        ICommonDispatcher { contract_address: vault.contract_address }.upgrade(cls);
+        IReplaceableDispatcher { contract_address: vault.contract_address }.add_new_implementation(data);
     }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: "ONLY_SECURITY_GOVERNOR")]
+    fn test_unpause_security_governor_only() {
+        let vault = single_pool_vault();
+        let p = ICommonDispatcher { contract_address: vault.contract_address };
+        p.pause();
+        start_cheat_caller_address(vault.contract_address, 0xBAD.try_into().unwrap());
+        p.unpause();
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('no v1 access control',))]
+    fn test_v1_role_bootstrap_not_callable_on_v2() {
+        let vault = single_pool_vault();
+        // fresh v2 vaults have no v1 access control
+        vault.initialize_roles_from_v1(get_contract_address(), 1);
+    }
+
     // NB: constructor `min_timelock_delay > 0` is not unit-tested: snforge 0.54 aborts the
     // test on any constructor revert (not catchable via deploy() or deploy_syscall).
 }

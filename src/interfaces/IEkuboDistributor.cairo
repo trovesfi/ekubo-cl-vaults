@@ -1,5 +1,5 @@
 use starknet::{ContractAddress};
-use openzeppelin::token::erc20::interface::{IERC20Dispatcher};
+use openzeppelin::interfaces::erc20::{IERC20Dispatcher};
 
 #[derive(Drop, Copy, Serde)]
 pub struct Claim {

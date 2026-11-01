@@ -23,9 +23,9 @@ pub mod test_cl_vault_final {
     use openzeppelin::utils::serde::SerializedAppend;
     use troves_clvaults::helpers::pow;
     use troves_clvaults::components::swap::{AvnuMultiRouteSwap, Route};
-    use openzeppelin::token::erc20::interface::{ERC20ABIDispatcher, ERC20ABIDispatcherTrait};
+    use openzeppelin::interfaces::erc20::{ERC20ABIDispatcher, ERC20ABIDispatcherTrait};
     use troves_clvaults::tests::utils as test_utils;
-    use strkfarm_contracts::interfaces::common::{ICommonDispatcher, ICommonDispatcherTrait};
+    use starkware_utils::components::pausable::interface::{IPausableDispatcher as ICommonDispatcher, IPausableDispatcherTrait as ICommonDispatcherTrait};
 
     // ============================================================================
     // POOL CONFIGURATION HELPERS
@@ -212,7 +212,6 @@ pub mod test_cl_vault_final {
         managed_pools: Array<ManagedPool>,
         init_values: InitValues
     ) -> (IClVaultDispatcher, ERC20ABIDispatcher) {
-        let accessControl = test_utils::deploy_access_control();
         let clVault = declare("ConcLiquidityVault").unwrap().contract_class();
         
         let fee_bps = 1000;
@@ -226,7 +225,7 @@ pub mod test_cl_vault_final {
         let mut calldata: Array<felt252> = array![];
         calldata.append_serde(name);
         calldata.append_serde(symbol);
-        calldata.append(accessControl.into());
+        calldata.append(get_contract_address().into());
         calldata.append(constants::EKUBO_POSITIONS().into());
         calldata.append(constants::EKUBO_POSITIONS_NFT().into());
         calldata.append(constants::EKUBO_CORE().into());
@@ -237,6 +236,7 @@ pub mod test_cl_vault_final {
         calldata.append(test_utils::TEST_TIMELOCK_DELAY.into());
         
         let (address, _) = clVault.deploy(@calldata).expect('ClVault deploy failed');
+        test_utils::setup_roles(address);
         test_utils::mock_timelock(test_utils::TEST_TIMELOCK_DELAY);
 
         (
@@ -1192,7 +1192,7 @@ pub mod test_cl_vault_final {
 
     #[test]
     #[fork("mainnet_4707139")]
-    #[should_panic(expected: ('Access: Missing governor role',))]
+    #[should_panic(expected: "ONLY_APP_GOVERNOR")]
     fn test_set_settings_unauthorized() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         
@@ -1224,7 +1224,7 @@ pub mod test_cl_vault_final {
 
     #[test]
     #[fork("mainnet_4707139")]
-    #[should_panic(expected: ('Access: Missing governor role',))]
+    #[should_panic(expected: "ONLY_APP_GOVERNOR")]
     fn test_add_pool_unauthorized() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         
@@ -1298,7 +1298,7 @@ pub mod test_cl_vault_final {
 
     #[test]
     #[fork("mainnet_4707139")]
-    #[should_panic(expected: ('Access: Missing governor role',))]
+    #[should_panic(expected: "ONLY_APP_GOVERNOR")]
     fn test_remove_pool_unauthorized() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         
@@ -1309,7 +1309,7 @@ pub mod test_cl_vault_final {
 
     #[test]
     #[fork("mainnet_4707139")]
-    #[should_panic(expected: ('Access: Missing relayer role',))]
+    #[should_panic(expected: "ONLY_OPERATOR")]
     fn test_rebalance_unauthorized() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         
@@ -1396,7 +1396,7 @@ pub mod test_cl_vault_final {
 
     #[test]
     #[fork("mainnet_4707139")]
-    #[should_panic(expected: ('Access: Missing EA role',))]
+    #[should_panic(expected: "ONLY_SECURITY_AGENT")]
     fn test_pause_unauthorized() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let common = get_common_dispatcher(clVault);
@@ -1408,7 +1408,7 @@ pub mod test_cl_vault_final {
 
     #[test]
     #[fork("mainnet_4707139")]
-    #[should_panic(expected: ('Pausable: paused',))]
+    #[should_panic(expected: ('PAUSED',))]
     fn test_deposit_when_paused() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let common = get_common_dispatcher(clVault);
@@ -1450,7 +1450,7 @@ pub mod test_cl_vault_final {
 
     #[test]
     #[fork("mainnet_4707139")]
-    #[should_panic(expected: ('Pausable: paused',))]
+    #[should_panic(expected: ('PAUSED',))]
     fn test_handle_fees_when_paused() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let common = get_common_dispatcher(clVault);
@@ -1462,7 +1462,7 @@ pub mod test_cl_vault_final {
     // rebalance is pausable (emergency stop for a compromised relayer)
     #[test]
     #[fork("mainnet_4707139")]
-    #[should_panic(expected: ('Pausable: paused',))]
+    #[should_panic(expected: ('PAUSED',))]
     fn test_rebalance_when_paused() {
         let (clVault, _) = deploy_vault_xstrk_strk();
         let common = get_common_dispatcher(clVault);

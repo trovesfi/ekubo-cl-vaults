@@ -11,7 +11,7 @@ pub trait IMockReentrantDistributor<T> {
 pub mod MockReentrantDistributor {
     use starknet::ContractAddress;
     use starknet::storage::{StoragePointerReadAccess, StoragePointerWriteAccess};
-    use openzeppelin::token::erc20::interface::IERC20Dispatcher;
+    use openzeppelin::interfaces::erc20::IERC20Dispatcher;
     use troves_clvaults::cl_vault::interface::{IClVaultDispatcher, IClVaultDispatcherTrait};
     use troves_clvaults::interfaces::IEkuboDistributor::Claim;
 

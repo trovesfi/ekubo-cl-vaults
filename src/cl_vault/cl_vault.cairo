@@ -5,24 +5,20 @@ mod ConcLiquidityVault {
         ContractAddress, get_contract_address, get_caller_address, get_block_timestamp,
     };
     use core::num::traits::Sqrt;
-    use openzeppelin::governance::timelock::interface::ITimelockDispatcherTrait;
-    use openzeppelin::{
-        security::{
-            pausable::PausableComponent,
-            reentrancyguard::ReentrancyGuardComponent
-        },
-        upgrades::upgradeable::UpgradeableComponent,
-        introspection::src5::SRC5Component,
-        token::erc20::{
-            ERC20Component,
-            ERC20HooksEmptyImpl,
-            interface::{
-                IERC20Mixin,
-                ERC20ABIDispatcher,
-                ERC20ABIDispatcherTrait
-            }
-        },
-    };
+    use openzeppelin::interfaces::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait};
+    use openzeppelin::interfaces::accesscontrol::{IAccessControlDispatcher, IAccessControlDispatcherTrait};
+    use openzeppelin::security::reentrancyguard::ReentrancyGuardComponent;
+    use openzeppelin::introspection::src5::SRC5Component;
+    use openzeppelin::access::accesscontrol::AccessControlComponent;
+    use openzeppelin::token::erc20::{ERC20Component, ERC20HooksEmptyImpl, DefaultConfig};
+    use openzeppelin::interfaces::erc20::IERC20Mixin;
+    use starkware_utils::components::roles::RolesComponent;
+    use starkware_utils::components::roles::RolesComponent::InternalTrait as RolesInternalTrait;
+    use starkware_utils::components::common_roles::CommonRolesComponent;
+    use starkware_utils::components::pausable::PausableComponent;
+    use starkware_utils::components::pausable::PausableComponent::InternalTrait as PausableInternalTrait;
+    use starkware_utils::components::replaceability::ReplaceabilityComponent;
+    use starkware_utils::components::replaceability::ReplaceabilityComponent::InternalReplaceabilityTrait;
     use ekubo::{
         types::{
             pool_price::PoolPrice,
@@ -30,9 +26,6 @@ mod ConcLiquidityVault {
             i129::i129
         },
         interfaces::mathlib::{IMathLibDispatcherTrait, dispatcher as ekuboLibDispatcher}
-    };
-    use strkfarm_contracts::{
-        components::common::CommonComp,
     };
     use troves_clvaults::helpers::{pow, ERC20Helper};
     use troves_clvaults::components::swap::{AvnuMultiRouteSwap, AvnuMultiRouteSwapImpl};
@@ -64,19 +57,26 @@ mod ConcLiquidityVault {
     component!(path: ERC20Component, storage: erc20, event: ERC20Event);
     component!(path: SRC5Component, storage: src5, event: SRC5Event);
     component!(path: ReentrancyGuardComponent, storage: reng, event: ReentrancyGuardEvent);
-    component!(path: UpgradeableComponent, storage: upgradeable, event: UpgradeableEvent);
+    // StarkWare roles (as in starknet-staking): GOVERNANCE_ADMIN, APP_GOVERNOR, OPERATOR,
+    // SECURITY_AGENT (pause) / SECURITY_GOVERNOR (unpause), UPGRADE_GOVERNOR (+ delayed upgrades)
+    component!(path: AccessControlComponent, storage: accesscontrol, event: AccessControlEvent);
+    component!(path: CommonRolesComponent, storage: common_roles, event: CommonRolesEvent);
+    component!(path: RolesComponent, storage: roles, event: RolesEvent);
     component!(path: PausableComponent, storage: pausable, event: PausableEvent);
-    // contains standard functions like pause/upgrade/permission assets etc.
-    component!(path: CommonComp, storage: common, event: CommonCompEvent);
+    component!(path: ReplaceabilityComponent, storage: replaceability, event: ReplaceabilityEvent);
 
     #[abi(embed_v0)]
     impl ERC20MixinImpl = ERC20Component::ERC20MixinImpl<ContractState>;
-
-    // Not embedded directly: TimelockedCommonImpl wraps it so `upgrade` also requires a timelock.
-    impl CommonCompImpl = CommonComp::CommonImpl<ContractState>;
+    #[abi(embed_v0)]
+    impl RolesImpl = RolesComponent::RolesImpl<ContractState>;
+    #[abi(embed_v0)]
+    impl CommonRolesImpl = CommonRolesComponent::CommonRolesImpl<ContractState>;
+    #[abi(embed_v0)]
+    impl PausableImpl = PausableComponent::PausableImpl<ContractState>;
+    #[abi(embed_v0)]
+    impl ReplaceabilityImpl = ReplaceabilityComponent::ReplaceabilityImpl<ContractState>;
 
     // Internal impls
-    impl CommonInternalImpl = CommonComp::InternalImpl<ContractState>;
     impl ERC20InternalImpl = ERC20Component::InternalImpl<ContractState>;
     impl ReentrancyGuardInternalImpl = ReentrancyGuardComponent::InternalImpl<ContractState>;
 
@@ -100,11 +100,18 @@ mod ConcLiquidityVault {
         #[substorage(v0)]
         src5: SRC5Component::Storage,
         #[substorage(v0)]
-        upgradeable: UpgradeableComponent::Storage,
+        accesscontrol: AccessControlComponent::Storage,
+        #[substorage(v0)]
+        common_roles: CommonRolesComponent::Storage,
+        #[substorage(v0)]
+        roles: RolesComponent::Storage,
         #[substorage(v0)]
         pausable: PausableComponent::Storage,
         #[substorage(v0)]
-        common: CommonComp::Storage,
+        replaceability: ReplaceabilityComponent::Storage,
+        // v1 only: the external troves AccessControl (same slot as troves CommonComp's
+        // `access_control`). Read once by initialize_roles_from_v1, never written.
+        access_control: ContractAddress,
         // constants
         ekubo_positions_contract: IEkuboDispatcher,
         ekubo_positions_nft: ContractAddress,
@@ -135,11 +142,15 @@ mod ConcLiquidityVault {
         #[flat]
         SRC5Event: SRC5Component::Event,
         #[flat]
-        UpgradeableEvent: UpgradeableComponent::Event,
+        AccessControlEvent: AccessControlComponent::Event,
+        #[flat]
+        CommonRolesEvent: CommonRolesComponent::Event,
+        #[flat]
+        RolesEvent: RolesComponent::Event,
         #[flat]
         PausableEvent: PausableComponent::Event,
         #[flat]
-        CommonCompEvent: CommonComp::Event,
+        ReplaceabilityEvent: ReplaceabilityComponent::Event,
         Deposit: Deposit,
         Withdraw: Withdraw,
         Rebalance: Rebalance,
@@ -159,7 +170,7 @@ mod ConcLiquidityVault {
         ref self: ContractState,
         name: ByteArray,
         symbol: ByteArray,
-        access_control: ContractAddress,
+        governance_admin: ContractAddress,
         ekubo_positions_contract: ContractAddress,
         ekubo_positions_nft: ContractAddress,
         ekubo_core: ContractAddress,
@@ -172,7 +183,9 @@ mod ConcLiquidityVault {
         assert(min_timelock_delay > 0, 'invalid min timelock delay');
         self.min_timelock_delay.write(min_timelock_delay);
         self.erc20.initializer(name, symbol);
-        self.common.initializer(access_control);
+        self.roles.initialize(:governance_admin);
+        // upgrades: add_new_implementation -> wait upgrade_delay -> replace_to (UPGRADE_GOVERNOR)
+        self.replaceability.initialize(upgrade_delay: min_timelock_delay);
         self
             .ekubo_positions_contract
             .write(IEkuboDispatcher { contract_address: ekubo_positions_contract });
@@ -386,7 +399,7 @@ mod ConcLiquidityVault {
         /// @dev Collects LP fees, takes the strategy fee, re-deposits the rest into the range.
         fn handle_fees(ref self: ContractState, pool_index: u64) {
             self.reng.start();
-            self.common.assert_not_paused();
+            self.pausable.assert_not_paused();
             self._handle_fees(pool_index);
             self.reng.end();
         }
@@ -402,8 +415,8 @@ mod ConcLiquidityVault {
             swapInfo2: AvnuMultiRouteSwap
         ) {
             self.reng.start();
-            self.common.assert_not_paused();
-            self.common.assert_relayer_role();
+            self.pausable.assert_not_paused();
+            self.roles.only_operator();
             let max_slippage_bps = self.rebalance_settings.read().max_slippage_bps;
 
             // claim rewards
@@ -491,7 +504,7 @@ mod ConcLiquidityVault {
 
         /// @notice Updates the fee settings of the contract.
         fn set_settings(ref self: ContractState, fee_settings: FeeSettings) {
-            self.common.assert_governor_role();
+            self.roles.only_app_governor();
             self._assert_timelocked_caller();
             self._assert_valid_fee_settings(fee_settings);
             self.fee_settings.write(fee_settings);
@@ -503,7 +516,7 @@ mod ConcLiquidityVault {
             ref self: ContractState, 
             max_unused_balances: MaxUnusedBalances
         ) {
-            self.common.assert_governor_role();
+            self.roles.only_app_governor();
             self._assert_timelocked_caller();
             self.max_unused_balances_on_rebalance.write(max_unused_balances);
             self.emit(max_unused_balances);
@@ -518,8 +531,8 @@ mod ConcLiquidityVault {
             rebalance_params: RebalanceParams
         ) {
             self.reng.start();
-            self.common.assert_not_paused();
-            self.common.assert_relayer_role();
+            self.pausable.assert_not_paused();
+            self.roles.only_operator();
             let settings = self.rebalance_settings.read();
 
             // rate limit
@@ -664,7 +677,7 @@ mod ConcLiquidityVault {
 
         /// @notice Updates relayer guard-rails (governor decision; only sanity-bounded).
         fn set_rebalance_settings(ref self: ContractState, settings: RebalanceSettings) {
-            self.common.assert_governor_role();
+            self.roles.only_app_governor();
             self._assert_timelocked_caller();
             assert(settings.max_slippage_bps <= MAX_REBALANCE_SLIPPAGE_BPS, 'slippage bps too high');
             assert(settings.max_pool_tick_deviation <= MAX_TICK_MAGNITUDE, 'tick deviation too high');
@@ -674,7 +687,7 @@ mod ConcLiquidityVault {
         }
 
         fn set_oracle(ref self: ContractState, oracle: ContractAddress) {
-            self.common.assert_governor_role();
+            self.roles.only_app_governor();
             self._assert_timelocked_caller();
             self.oracle.write(oracle);
             // sanity: must price both vault tokens validly right now
@@ -685,13 +698,13 @@ mod ConcLiquidityVault {
         }
 
         fn add_pool(ref self: ContractState, pool: ManagedPool) {
-            self.common.assert_governor_role();
+            self.roles.only_app_governor();
             self._assert_timelocked_caller();
             self._modify_pool(pool, true);
         }
 
         fn remove_pool(ref self: ContractState, pool_index: u64) {
-            self.common.assert_governor_role();
+            self.roles.only_app_governor();
             self._assert_timelocked_caller();
             let pool = self.managed_pools[pool_index].read();
             self._modify_pool(pool, false);
@@ -731,9 +744,30 @@ mod ConcLiquidityVault {
             self.managed_pools[index].read()
         }
 
+        /// @notice One-time role bootstrap for vaults upgraded from v1 (which used the external
+        /// troves AccessControl). Callable only while roles are uninitialised, by an account that
+        /// holds DEFAULT_ADMIN in the v1 AccessControl. Seeds GOVERNANCE_ADMIN/SECURITY_ADMIN
+        /// with `governance_admin` and enables delayed upgrades with `upgrade_delay` (> 0).
+        fn initialize_roles_from_v1(
+            ref self: ContractState, governance_admin: ContractAddress, upgrade_delay: u64
+        ) {
+            let legacy = self.access_control.read();
+            let legacy_felt: felt252 = legacy.into();
+            assert(legacy_felt != 0, 'no v1 access control');
+            assert(
+                IAccessControlDispatcher { contract_address: legacy }
+                    .has_role(0, get_caller_address()),
+                'not v1 admin'
+            );
+            assert(upgrade_delay > 0, 'invalid upgrade delay');
+            // reverts if already initialised
+            self.roles.initialize(:governance_admin);
+            self.replaceability.initialize(:upgrade_delay);
+        }
+
         /// @notice Minimum delay the governor/admin timelock must enforce. Must stay > 0.
         fn set_min_timelock_delay(ref self: ContractState, min_delay: u64) {
-            self.common.assert_governor_role();
+            self.roles.only_app_governor();
             self._assert_timelocked_caller();
             assert(min_delay > 0, 'invalid min timelock delay');
             self.min_timelock_delay.write(min_delay);
@@ -753,32 +787,6 @@ mod ConcLiquidityVault {
         }
     }
 
-    /// ICommon with a timelock requirement on upgrade. pause/unpause stay instant (guardian).
-    #[abi(embed_v0)]
-    impl TimelockedCommonImpl of strkfarm_contracts::interfaces::common::ICommon<ContractState> {
-        fn upgrade(ref self: ContractState, new_class: starknet::ClassHash) {
-            self.common.assert_admin_role();
-            self._assert_timelocked_caller();
-            CommonCompImpl::upgrade(ref self, new_class);
-        }
-
-        fn pause(ref self: ContractState) {
-            CommonCompImpl::pause(ref self);
-        }
-
-        fn unpause(ref self: ContractState) {
-            CommonCompImpl::unpause(ref self);
-        }
-
-        fn is_paused(self: @ContractState) -> bool {
-            CommonCompImpl::is_paused(self)
-        }
-
-        fn access_control(self: @ContractState) -> ContractAddress {
-            CommonCompImpl::access_control(self)
-        }
-    }
-
     #[generate_trait]
     pub impl InternalImpl of InternalTrait {
         /// The caller (already role-checked) must be a timelock (OZ TimelockController ABI)
@@ -789,7 +797,7 @@ mod ConcLiquidityVault {
             if required == 0 {
                 return;
             }
-            let delay = openzeppelin::governance::timelock::interface::ITimelockDispatcher {
+            let delay = ITimelockDispatcher {
                 contract_address: get_caller_address()
             }
                 .get_min_delay();
@@ -803,7 +811,7 @@ mod ConcLiquidityVault {
         }
 
         fn _is_paused(self: @ContractState) -> bool {
-            CommonCompImpl::is_paused(self)
+            self.pausable.is_paused()
         }
 
         fn _checked_rebalance_swap(
@@ -938,7 +946,7 @@ mod ConcLiquidityVault {
             min_shares: u256
         ) -> u256 {
             self.reng.start();
-            self.common.assert_not_paused();
+            self.pausable.assert_not_paused();
             let caller: ContractAddress = get_caller_address();
             assert(amount0 > 0 || amount1 > 0, 'amounts cannot be zero');
             let (shares, paid0, paid1) = self._process_deposit(amount0, amount1);
@@ -1066,16 +1074,15 @@ mod ConcLiquidityVault {
                 contract_address: rewardsContract
             };
             let rewardToken: ContractAddress = distributor.get_token().contract_address;
-            let rewardTokenDisp = ERC20ABIDispatcher { contract_address: rewardToken };
-    
+ 
             if (proof.is_empty()) {
                 return (rewardToken, 0);
             }
     
             let this = get_contract_address();
-            let pre_bal = rewardTokenDisp.balanceOf(this);
+            let pre_bal = ERC20Helper::balanceOf(rewardToken, this);
             distributor.claim(claim, proof);
-            let post_bal = rewardTokenDisp.balanceOf(this);
+            let post_bal = ERC20Helper::balanceOf(rewardToken, this);
     
             // claim may not be exactly as requested, so we do bal diff check
             let amount = (post_bal - pre_bal);

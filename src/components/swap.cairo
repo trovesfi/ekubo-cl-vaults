@@ -2,7 +2,7 @@
 // src/components/swap.cairo with the legacy (zkLend-style) oracle check removed: the vault
 // always performs its own oracle check on the output (see ConcLiquidityVault::_oracle_checked_swap).
 use starknet::{ContractAddress, get_contract_address};
-use openzeppelin::token::erc20::interface::{ERC20ABIDispatcher, ERC20ABIDispatcherTrait};
+use openzeppelin::interfaces::erc20::{ERC20ABIDispatcher, ERC20ABIDispatcherTrait};
 use troves_clvaults::helpers::constants;
 
 #[derive(Drop, Clone, Serde)]

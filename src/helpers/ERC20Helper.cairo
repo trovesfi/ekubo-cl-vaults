@@ -1,6 +1,6 @@
 // Vendored from trovesfi/troves-contracts@01ca8f5 src/helpers/ERC20Helper.cairo (dependency removed).
 use starknet::ContractAddress;
-use openzeppelin::token::erc20::interface::{ERC20ABIDispatcher, ERC20ABIDispatcherTrait};
+use openzeppelin::interfaces::erc20::{ERC20ABIDispatcher, ERC20ABIDispatcherTrait};
 
 pub fn balanceOf(token: ContractAddress, address: ContractAddress) -> u256 {
     dispatcher(token).balanceOf(address)
