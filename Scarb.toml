@@ -11,6 +11,8 @@ openzeppelin = "3.0.0"
 starknet = "2.18.0" # cairo version
 # StarkWare roles / pausable / replaceability / math (as used by starknet-staking), pinned by commit
 starkware_utils = { git = "https://github.com/starkware-libs/starkware-starknet-utils", rev = "3e2fd53d99e16c87f6cf2ced53b8c842a2d54a18" }
+# StarkWare MultiExecutor (timelock with quorum + expiry), same pinned commit
+starkware_delayed_executor = { git = "https://github.com/starkware-libs/starkware-starknet-utils", rev = "3e2fd53d99e16c87f6cf2ced53b8c842a2d54a18" }
 
 [dev-dependencies]
 snforge_std = "0.63.0"
@@ -18,6 +20,8 @@ assert_macros = "2.18.0"
 
 [[target.starknet-contract]]
 casm = true
+# also emit the StarkWare timelock so its class hash can be allowlisted / declared from this build
+build-external-contracts = ["starkware_delayed_executor::multi_executor::MultiExecutor"]
 
 [lib]
 
@@ -28,6 +32,7 @@ coverage = "snforge test --save-trace-data --rerun-failed && snforge test --cove
 
 [[test]]
 name = "contracts_test"
+build-external-contracts = ["starkware_delayed_executor::multi_executor::MultiExecutor"]
 
 [[tool.snforge.fork]]
 name = "mainnet_4707139"

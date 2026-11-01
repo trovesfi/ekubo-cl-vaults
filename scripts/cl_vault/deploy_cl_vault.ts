@@ -1,5 +1,6 @@
 import { ACCOUNT_NAME, deployContract, getAccount, getRpcProvider, getSwapInfo, myDeclare } from "../lib/utils";
 import { EKUBO_POSITIONS, EKUBO_CORE, EKUBO_POSITIONS_NFT, VESU_ORACLE, CL_VAULT_MIN_TIMELOCK_DELAY, wstETH, ETH, ACCESS_CONTROL, xSTRK, STRK, accountKeyMap, SUPER_ADMIN, USDC, USDT, WBTC, xWBTC, tBTC, xtBTC, xsBTC, solvBTC} from "../lib/constants";
+import { allowedTimelockClasses } from "../lib/timelock_classes";
 import { byteArray, Contract, num, TransactionExecutionStatus, uint256 } from "starknet";
 import { ContractAddr, EkuboCLVaultStrategies } from "@strkfarm/sdk";
 // import { executeBatch, scheduleBatch } from "../timelock/actions";
@@ -112,10 +113,11 @@ async function declareAndDeployConcLiquidityVault(
         init_values: initValues,
         managed_pools: managedPools,
         min_timelock_delay: CL_VAULT_MIN_TIMELOCK_DELAY,
-        // allowlisted timelock classes + delay getter selector, e.g.
-        // [{class_hash: <OZ TimelockController class>, delay_selector: selector('get_min_delay')},
-        //  {class_hash: <StarkWare MultiExecutor class>, delay_selector: selector('get_execution_delay')}]
-        allowed_timelocks: JSON.parse(process.env.CL_VAULT_ALLOWED_TIMELOCKS || '[]')
+        // OZ TimelockController (get_min_delay) + StarkWare MultiExecutor (get_execution_delay),
+        // class hashes computed from this build; override with CL_VAULT_ALLOWED_TIMELOCKS (JSON)
+        allowed_timelocks: process.env.CL_VAULT_ALLOWED_TIMELOCKS
+            ? JSON.parse(process.env.CL_VAULT_ALLOWED_TIMELOCKS)
+            : allowedTimelockClasses()
     }, symbol);
 }
 

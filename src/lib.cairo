@@ -1,5 +1,9 @@
 pub mod ekubo;
 
+pub mod governance {
+    pub mod timelock;
+}
+
 pub mod helpers {
     pub mod ERC20Helper;
     pub mod constants;

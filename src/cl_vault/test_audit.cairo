@@ -30,6 +30,10 @@ pub mod test_audit {
     use troves_clvaults::interfaces::IEkuboCore::Bounds as EkBounds;
     use openzeppelin::utils::serde::SerializedAppend;
     use troves_clvaults::tests::utils as test_utils;
+    use openzeppelin::interfaces::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait};
+    use starkware_delayed_executor::delayed_executor::{
+        IDelayedExecutorDispatcher, IDelayedExecutorDispatcherTrait,
+    };
     use starkware_utils::components::roles::interface::{IRolesDispatcher, IRolesDispatcherTrait};
     use starkware_utils::components::replaceability::interface::{
         IReplaceableDispatcher, IReplaceableDispatcherTrait, ImplementationData,
@@ -1238,5 +1242,102 @@ pub mod test_audit {
         assert(vault.get_timelock_class_selector(cls) == selector!("get_min_delay"), 'not allowed');
         vault.set_timelock_class(cls, 0);
         assert(vault.get_timelock_class_selector(cls) == 0, 'not removed');
+    }
+
+    // ============================================================================
+    // Real timelocks as governor: OZ TimelockController and StarkWare MultiExecutor
+    // ============================================================================
+
+    fn set_fee_call(vault: IClVaultDispatcher, bps: u256) -> starknet::account::Call {
+        let mut cd: Array<felt252> = array![];
+        fee(bps).serialize(ref cd);
+        starknet::account::Call { to: vault.contract_address, selector: selector!("set_settings"), calldata: cd.span() }
+    }
+
+    fn deploy_oz_timelock(min_delay: u64) -> ContractAddress {
+        let this = get_contract_address();
+        let cls = declare("TimelockController").unwrap().contract_class();
+        let mut cd: Array<felt252> = array![];
+        min_delay.serialize(ref cd);
+        array![this].span().serialize(ref cd); // proposers
+        array![this].span().serialize(ref cd); // executors
+        let zero: ContractAddress = 0.try_into().unwrap();
+        zero.serialize(ref cd); // no extra admin
+        let (addr, _) = cls.deploy(@cd).unwrap();
+        addr
+    }
+
+    fn deploy_multi_executor(delay: u64) -> ContractAddress {
+        let this = get_contract_address();
+        let cls = declare("MultiExecutor").unwrap().contract_class();
+        let mut cd: Array<felt252> = array![];
+        array![this].span().serialize(ref cd); // owners
+        1_u32.serialize(ref cd); // quorum
+        1_u32.serialize(ref cd); // delay start threshold
+        86400_u64.serialize(ref cd); // owner acceptance delay
+        delay.serialize(ref cd); // execution delay
+        (delay + 86400_u64).serialize(ref cd); // expiration
+        let (addr, _) = cls.deploy(@cd).unwrap();
+        addr
+    }
+
+    // allow the timelock's class (via the mocked test governor) and make it APP_GOVERNOR
+    fn enable_governor(vault: IClVaultDispatcher, gov: ContractAddress, delay_selector: felt252) {
+        vault.set_timelock_class(snforge_std::get_class_hash(gov), delay_selector);
+        IRolesDispatcher { contract_address: vault.contract_address }.register_app_governor(gov);
+    }
+
+    fn oz_schedule_and_execute(timelock: ContractAddress, call: starknet::account::Call, delay: u64) {
+        let tl = ITimelockDispatcher { contract_address: timelock };
+        start_cheat_block_timestamp(timelock, 1_800_000_000);
+        tl.schedule(call, 0, 0, delay);
+        start_cheat_block_timestamp(timelock, 1_800_000_000 + delay);
+        tl.execute(call, 0, 0);
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_oz_timelock_governs() {
+        let vault = single_pool_vault();
+        let tl = deploy_oz_timelock(test_utils::TEST_TIMELOCK_DELAY);
+        enable_governor(vault, tl, selector!("get_min_delay"));
+        oz_schedule_and_execute(tl, set_fee_call(vault, 700), test_utils::TEST_TIMELOCK_DELAY);
+        assert(vault.get_fee_settings().fee_bps == 700, 'fee not set via OZ timelock');
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic(expected: ('timelock delay too short',))]
+    fn test_oz_timelock_with_short_delay_rejected() {
+        let vault = single_pool_vault();
+        let tl = deploy_oz_timelock(3600);
+        enable_governor(vault, tl, selector!("get_min_delay"));
+        oz_schedule_and_execute(tl, set_fee_call(vault, 700), 3600);
+    }
+
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_starkware_multi_executor_governs() {
+        let vault = single_pool_vault();
+        let ex = deploy_multi_executor(test_utils::TEST_TIMELOCK_DELAY);
+        enable_governor(vault, ex, selector!("get_execution_delay"));
+        let calls = array![set_fee_call(vault, 800)].span();
+        let d = IDelayedExecutorDispatcher { contract_address: ex };
+        start_cheat_block_timestamp(ex, 1_800_000_000);
+        d.submit_calls(calls, 0);
+        start_cheat_block_timestamp(ex, 1_800_000_000 + test_utils::TEST_TIMELOCK_DELAY);
+        d.exec_calls(calls, 0);
+        assert(vault.get_fee_settings().fee_bps == 800, 'fee not set via MultiExecutor');
+    }
+
+    // an OZ timelock is not accepted under the StarkWare delay getter (wrong selector)
+    #[test]
+    #[fork("mainnet_4707139")]
+    #[should_panic]
+    fn test_timelock_class_with_wrong_selector_fails() {
+        let vault = single_pool_vault();
+        let tl = deploy_oz_timelock(test_utils::TEST_TIMELOCK_DELAY);
+        enable_governor(vault, tl, selector!("get_execution_delay"));
+        oz_schedule_and_execute(tl, set_fee_call(vault, 700), test_utils::TEST_TIMELOCK_DELAY);
     }
 }
