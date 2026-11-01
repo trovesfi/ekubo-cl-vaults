@@ -19,7 +19,7 @@ pub mod test_cl_vault_final {
     use troves_clvaults::interfaces::IEkuboPositionsNFT::{
         IEkuboNFTDispatcher, IEkuboNFTDispatcherTrait
     };
-    use ekubo::types::i129::{i129};
+    use troves_clvaults::ekubo::types::i129::{i129};
     use openzeppelin::utils::serde::SerializedAppend;
     use troves_clvaults::helpers::pow;
     use troves_clvaults::components::swap::{AvnuMultiRouteSwap, Route};

@@ -8,7 +8,6 @@ cairo-version = "2.18.0"
 
 [dependencies]
 openzeppelin = "3.0.0"
-ekubo = { git = "https://github.com/EkuboProtocol/abis.git", rev = "f4a16b95967c5596d5a3cd4e0422bb9a2e3eb017"}
 starknet = "2.18.0" # cairo version
 # StarkWare roles / pausable / replaceability / math (as used by starknet-staking), pinned by commit
 starkware_utils = { git = "https://github.com/starkware-libs/starkware-starknet-utils", rev = "3e2fd53d99e16c87f6cf2ced53b8c842a2d54a18" }

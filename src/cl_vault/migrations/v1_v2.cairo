@@ -1,5 +1,5 @@
 use troves_clvaults::interfaces::IEkuboCore::{Bounds, PoolKey, PositionKey};
-use ekubo::types::position::Position;
+use troves_clvaults::ekubo::types::position::Position;
 use starknet::ContractAddress;
 
 /// Final role holders after migration (StarkWare roles). Recommended: timelock for

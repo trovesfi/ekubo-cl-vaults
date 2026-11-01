@@ -1,6 +1,6 @@
 use starknet::{ContractAddress};
 use troves_clvaults::interfaces::IEkuboCore::{Bounds, PoolKey};
-use ekubo::types::pool_price::PoolPrice;
+use troves_clvaults::ekubo::types::pool_price::PoolPrice;
 
 #[derive(Copy, Drop, Serde, PartialEq)]
 pub struct GetTokenInfoResult {

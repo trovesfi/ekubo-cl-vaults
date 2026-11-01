@@ -23,11 +23,11 @@ pub mod test_audit {
     };
     use troves_clvaults::interfaces::IEkuboCore::{Bounds, PoolKey};
     use troves_clvaults::interfaces::IEkuboPosition::{IEkuboDispatcher, IEkuboDispatcherTrait};
-    use ekubo::types::i129::i129;
-    use ekubo::interfaces::core::{ICoreDispatcher, ICoreDispatcherTrait};
-    use ekubo::interfaces::positions::{IPositionsDispatcher, IPositionsDispatcherTrait};
-    use ekubo::types::keys::PoolKey as EkPoolKey;
-    use ekubo::types::bounds::Bounds as EkBounds;
+    use troves_clvaults::ekubo::types::i129::i129;
+    use troves_clvaults::ekubo::interfaces::core::{ICoreDispatcher, ICoreDispatcherTrait};
+    use troves_clvaults::ekubo::interfaces::positions::{IPositionsDispatcher, IPositionsDispatcherTrait};
+    use troves_clvaults::interfaces::IEkuboCore::PoolKey as EkPoolKey;
+    use troves_clvaults::interfaces::IEkuboCore::Bounds as EkBounds;
     use openzeppelin::utils::serde::SerializedAppend;
     use troves_clvaults::tests::utils as test_utils;
     use starkware_utils::components::roles::interface::{IRolesDispatcher, IRolesDispatcherTrait};

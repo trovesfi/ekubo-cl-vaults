@@ -2,7 +2,7 @@ use starknet::{ContractAddress};
 use troves_clvaults::interfaces::IEkuboCore::{Bounds, PoolKey};
 use troves_clvaults::components::swap::{AvnuMultiRouteSwap};
 use troves_clvaults::interfaces::IEkuboDistributor::Claim;
-use ekubo::types::i129::{i129};
+use troves_clvaults::ekubo::types::i129::{i129};
 
 #[derive(Drop, Copy, Serde, starknet::Store)]
 pub struct ClSettings {

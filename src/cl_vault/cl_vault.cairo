@@ -22,7 +22,7 @@ mod ConcLiquidityVault {
     use starkware_utils::components::pausable::PausableComponent::InternalTrait as PausableInternalTrait;
     use starkware_utils::components::replaceability::ReplaceabilityComponent;
     use starkware_utils::components::replaceability::ReplaceabilityComponent::InternalReplaceabilityTrait;
-    use ekubo::{
+    use troves_clvaults::ekubo::{
         types::{
             pool_price::PoolPrice,
             position::Position,

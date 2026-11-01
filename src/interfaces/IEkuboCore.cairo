@@ -1,6 +1,6 @@
 use starknet::ContractAddress;
-use ekubo::types::position::Position;
-use ekubo::types::i129::{i129};
+use troves_clvaults::ekubo::types::position::Position;
+use troves_clvaults::ekubo::types::i129::{i129};
 
 // Tick bounds for a position
 #[derive(Copy, Drop, Serde, PartialEq, Hash, starknet::Store)]

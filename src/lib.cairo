@@ -1,3 +1,5 @@
+pub mod ekubo;
+
 pub mod helpers {
     pub mod ERC20Helper;
     pub mod constants;
