@@ -1021,16 +1021,18 @@ mod ConcLiquidityVault {
             let max_shares = self.balance_of(caller);
             assert(shares <= max_shares, 'insufficient shares');
 
-            // compound pending fees first so the exiting user gets their share
-            // (skipped while paused: withdrawals must keep working in emergencies)
-            let paused = self._is_paused();
+            // Collect pending fees (minus strategy fee) into idle balances so the exiting user gets
+            // their share. Deliberately no Ekubo re-deposit here: exits must not depend on adding
+            // liquidity succeeding, and collecting also avoids Ekubo's MUST_COLLECT_FEES revert
+            // when a range's liquidity is fully burnt. Works the same while paused.
             let n_pools = self.managed_pools.len();
             let mut i = 0;
-            if !paused {
-                while i != n_pools {
-                    self._handle_fees(i);
-                    i += 1;
+            while i != n_pools {
+                let pool = self.managed_pools[i].read();
+                if pool.nft_id != 0 {
+                    self._collect_strat_fee(pool);
                 }
+                i += 1;
             }
 
             // liquidity per pool and idle share computed before burning shares

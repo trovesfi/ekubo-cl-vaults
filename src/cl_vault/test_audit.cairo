@@ -1364,4 +1364,30 @@ pub mod test_audit {
         vault.add_pool(ManagedPool { pool_key: pool_key_2(), bounds: bounds_2(), nft_id: own_nft });
         assert(vault.get_managed_pools_len() == 2, 'pool not added');
     }
+
+    // withdraw collects accrued fees into idle (also while paused) and never re-deposits
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_withdraw_collects_fees_while_paused() {
+        let vault = setup_live_vault();
+        let alice: ContractAddress = 0xA11CE.try_into().unwrap();
+        let pool = vault.get_managed_pool(0);
+        let this = get_contract_address();
+        fund(this, 2000 * E18);
+        avnu_swap_self(strk(), xstrk(), 500 * E18, pool.pool_key);
+        avnu_swap_self(xstrk(), strk(), 400 * E18, pool.pool_key);
+        let positions = IEkuboDispatcher { contract_address: constants::EKUBO_POSITIONS() };
+        let before = positions.get_token_info(pool.nft_id, pool.pool_key, pool.bounds);
+        assert(before.fees0 > 0 || before.fees1 > 0, 'setup: no fees');
+        let liq_before = vault.total_liquidity_per_pool(0);
+        ICommonDispatcher { contract_address: vault.contract_address }.pause();
+        let shares = bal(vault.contract_address, alice);
+        start_cheat_caller_address(vault.contract_address, alice);
+        vault.withdraw(shares / 2, alice);
+        stop_cheat_caller_address(vault.contract_address);
+        let after = positions.get_token_info(pool.nft_id, pool.pool_key, pool.bounds);
+        assert(after.fees0 == 0 && after.fees1 == 0, 'fees not collected');
+        // only the user's liquidity left the range (no re-deposit of fees)
+        assert(vault.total_liquidity_per_pool(0) < liq_before, 'liquidity not reduced');
+    }
 }
