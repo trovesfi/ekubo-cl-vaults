@@ -65,5 +65,12 @@ functional), `src/cl_vault/migrations/test_v1_v2_migration.cairo` (live v1 vault
 - After the v1 migration the migration contract still holds GOVERNANCE_ADMIN / SECURITY_ADMIN until the new admin
   calls `remove_governance_admin` / `remove_security_admin` (StarkWare roles forbid self-renounce).
 - `harvest` takes an arbitrary `rewardsContract` (distributor allowlist deferred); output swaps are oracle-checked.
+- Harvest sniping (deferred with harvest): rewards are added to idle balances in one step, so a large
+  deposit right before a known `harvest` and a withdraw right after captures most of the rewards.
+  Options: stream harvested value over time, a minimum holding period / exit fee, or private harvest txs.
+- Guard-rails are explicit deploy / migration arguments (no contract defaults); `min_rebalance_interval = 0` or
+  unlimited swap caps are allowed but let a leaked OPERATOR key compound losses within one block.
+- Fees are re-deposited only within `max_pool_tick_deviation` of the oracle; otherwise they stay idle (counted in
+  the share price) until the next rebalance. `withdraw` only collects fees, never adds liquidity.
 - Within its guard-rails the OPERATOR can still lose up to `max_slippage_bps` per rebalance.
 - Constructor `min_timelock_delay > 0` is enforced but not unit-tested (snforge aborts on constructor reverts).
