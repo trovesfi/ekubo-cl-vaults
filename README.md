@@ -2,6 +2,27 @@
 
 Automated concentrated liquidity management protocol for Ekubo AMM, combining dynamic position management with fee auto-compounding and STRK reward harvesting.
 
+## Build, test, verify
+
+Toolchain is pinned in `.tool-versions` (Scarb 2.18.0, Starknet Foundry 0.63.0).
+
+```bash
+scarb --release build                                   # artifacts in target/release
+(cd scripts/ci && npm ci) && node scripts/ci/class_hashes.mjs --check   # reproducible class hashes
+snforge test --max-n-steps 30000000                     # fork tests (see below)
+```
+
+- `deployments/class-hashes.json` holds the Sierra and compiled class hashes of the release build
+  (vault, v1->v2 migration, OZ `TimelockController`, StarkWare `MultiExecutor`). Declare only from
+  a build that passes `--check`; CI enforces it on every push.
+- Fork tests need a Starknet mainnet RPC (spec v0.10). snforge does not expand env vars in
+  `Scarb.toml`, so replace `"$MAINNET_RPC_URL_V10"` with your URL locally (or a localhost proxy);
+  CI does this from the `MAINNET_RPC_URL_V10` secret.
+
+> The operation descriptions below predate the v2 hardening (proportional shares incl. idle
+> balances, `deposit_with_min` / `withdraw_with_min`, Vesu-oracle-checked rebalances, StarkWare
+> roles + allowlisted timelocks, delayed upgrades); the code and tests are authoritative.
+
 ## How It Works
 The vault lets users deposit token pairs into optimized liquidity positions on Ekubo. Using similar mechanics as ERC-4626 token issuance, it automatically reinvests earned fees back into the position and handles complex operations like reward harvesting. Governance-controlled rebalancing maintains optimal price bounds while role-based security restricts critical operations. The system tracks positions via NFT ownership and enforces strict precision checks for capital efficiency.
 

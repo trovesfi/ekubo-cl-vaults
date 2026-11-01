@@ -1,0 +1,22 @@
+{
+  "toolchain": "scarb 2.18.0 (e6144df0f 2026-04-21) | cairo: 2.18.0 (https://crates.io/crates/cairo-lang-compiler/2.18.0)",
+  "profile": "release",
+  "contracts": {
+    "ConcLiquidityVault": {
+      "class_hash": "0x218d873ef54817e124f90448f659f4e9482648deea934339c513164fb1fb99b",
+      "compiled_class_hash": "0x2f88a1792948af57bd01054b14ae0bf643208d700277952661148985165f158"
+    },
+    "V1V2Migration": {
+      "class_hash": "0x52e52f6d4ae20cefac87827f271ef295ced6d6a57ea4b6f882c931755e40ef6",
+      "compiled_class_hash": "0x7eecb73a5fdb18c28afc7ca87e7bf1f3f5797acecc8a69ef14d9e0c48537ba"
+    },
+    "TimelockController": {
+      "class_hash": "0x139d29867efccb158b38ee8d10ba25e9e5f26943ec364741a18117d722f6750",
+      "compiled_class_hash": "0x2cf441032d244f3fd61e2e22cf08bcd4f682a0150bf5e00d08d96abc4171870"
+    },
+    "MultiExecutor": {
+      "class_hash": "0x55d6405f38c10eddbbc0842398f598e85afe8d373963ba149fe3eb506b80305",
+      "compiled_class_hash": "0x77249f31ede34eb76200ea0879bbc5467a2baef9fe6593a54928a1f7a04cb2b"
+    }
+  }
+}

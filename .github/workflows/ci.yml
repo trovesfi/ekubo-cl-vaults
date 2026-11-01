@@ -1,0 +1,53 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-class-hashes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: software-mansion/setup-scarb@2a96b748888e3329ee44ac9ac073d930e692b3cd # v1.6.2
+        with:
+          tool-versions: .tool-versions
+      - name: Release build
+        run: scarb --release build
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Verify class hashes (deployments/class-hashes.json)
+        run: |
+          npm ci --prefix scripts/ci --no-audit --no-fund
+          node scripts/ci/class_hashes.mjs --check
+
+  fork-tests:
+    runs-on: ubuntu-latest
+    env:
+      MAINNET_RPC_URL_V10: ${{ secrets.MAINNET_RPC_URL_V10 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: software-mansion/setup-scarb@2a96b748888e3329ee44ac9ac073d930e692b3cd # v1.6.2
+        with:
+          tool-versions: .tool-versions
+      - uses: foundry-rs/setup-snfoundry@16e23ddd0e2845f38727c92f4b913a7b728cda9e # v6.0.0
+        with:
+          tool-versions: .tool-versions
+      - name: Point fork config at the RPC secret (snforge does not expand env vars)
+        if: env.MAINNET_RPC_URL_V10 != ''
+        run: |
+          python3 - <<'PY'
+          import os, pathlib
+          p = pathlib.Path("Scarb.toml")
+          p.write_text(p.read_text().replace('"$MAINNET_RPC_URL_V10"', '"' + os.environ["MAINNET_RPC_URL_V10"] + '"'))
+          PY
+      - name: Fork tests (Starknet mainnet, RPC v0.10)
+        if: env.MAINNET_RPC_URL_V10 != ''
+        run: snforge test --max-n-steps 30000000
+      - name: Skip notice
+        if: env.MAINNET_RPC_URL_V10 == ''
+        run: echo "::warning::MAINNET_RPC_URL_V10 secret not set; fork tests skipped"

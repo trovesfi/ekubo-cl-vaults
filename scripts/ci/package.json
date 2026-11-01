@@ -1,0 +1,9 @@
+{
+  "name": "troves-clvaults-ci",
+  "private": true,
+  "type": "module",
+  "description": "Class-hash manifest for reproducible builds (no repo-wide deps)",
+  "dependencies": {
+    "starknet": "9.2.1"
+  }
+}
