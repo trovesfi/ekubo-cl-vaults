@@ -1,3 +1,13 @@
+pub mod helpers {
+    pub mod ERC20Helper;
+    pub mod constants;
+    pub mod pow;
+}
+
+pub mod components {
+    pub mod swap;
+}
+
 pub mod interfaces {
     pub mod IEkuboCore;
     pub mod IEkuboPosition;

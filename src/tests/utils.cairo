@@ -4,9 +4,9 @@ use snforge_std::{
 use snforge_std::{DeclareResultTrait, start_mock_call, test_address};
 use starknet::{ContractAddress, get_contract_address};
 use troves_clvaults::interfaces::IEkuboDistributor::{IEkuboDistributorDispatcher};
-use strkfarm_contracts::helpers::constants;
-use strkfarm_contracts::helpers::ERC20Helper;
-use strkfarm_contracts::helpers::pow;
+use troves_clvaults::helpers::constants;
+use troves_clvaults::helpers::ERC20Helper;
+use troves_clvaults::helpers::pow;
 
 pub fn deploy_access_control() -> ContractAddress {
     let cls = declare("AccessControl").unwrap().contract_class();

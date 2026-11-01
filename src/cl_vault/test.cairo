@@ -10,9 +10,9 @@ pub mod test_cl_vault_final {
     };
     use snforge_std::{DeclareResultTrait};
     use starknet::{ContractAddress, get_contract_address};
-    use strkfarm_contracts::helpers::constants;
+    use troves_clvaults::helpers::constants;
     use troves_clvaults::cl_vault::interface::ClSettings;
-    use strkfarm_contracts::helpers::ERC20Helper;
+    use troves_clvaults::helpers::ERC20Helper;
     use troves_clvaults::interfaces::IEkuboCore::{
         IEkuboCoreDispatcher, IEkuboCoreDispatcherTrait, Bounds, PoolKey
     };
@@ -21,8 +21,8 @@ pub mod test_cl_vault_final {
     };
     use ekubo::types::i129::{i129};
     use openzeppelin::utils::serde::SerializedAppend;
-    use strkfarm_contracts::helpers::pow;
-    use strkfarm_contracts::components::swap::{AvnuMultiRouteSwap, Route};
+    use troves_clvaults::helpers::pow;
+    use troves_clvaults::components::swap::{AvnuMultiRouteSwap, Route};
     use openzeppelin::token::erc20::interface::{ERC20ABIDispatcher, ERC20ABIDispatcherTrait};
     use troves_clvaults::tests::utils as test_utils;
     use strkfarm_contracts::interfaces::common::{ICommonDispatcher, ICommonDispatcherTrait};

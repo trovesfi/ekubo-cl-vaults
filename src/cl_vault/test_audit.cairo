@@ -17,8 +17,8 @@ pub mod test_audit {
         stop_cheat_caller_address,
     };
     use starknet::{ContractAddress, get_contract_address};
-    use strkfarm_contracts::helpers::{constants, ERC20Helper, pow};
-    use strkfarm_contracts::components::swap::{
+    use troves_clvaults::helpers::{constants, ERC20Helper, pow};
+    use troves_clvaults::components::swap::{
         AvnuMultiRouteSwap, Route, IAvnuDispatcher, IAvnuDispatcherTrait,
     };
     use troves_clvaults::interfaces::IEkuboCore::{Bounds, PoolKey};

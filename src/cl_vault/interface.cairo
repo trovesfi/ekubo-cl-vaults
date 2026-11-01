@@ -1,6 +1,6 @@
 use starknet::{ContractAddress};
 use troves_clvaults::interfaces::IEkuboCore::{Bounds, PoolKey};
-use strkfarm_contracts::components::swap::{AvnuMultiRouteSwap};
+use troves_clvaults::components::swap::{AvnuMultiRouteSwap};
 use troves_clvaults::interfaces::IEkuboDistributor::Claim;
 use ekubo::types::i129::{i129};
 

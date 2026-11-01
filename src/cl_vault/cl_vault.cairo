@@ -32,16 +32,10 @@ mod ConcLiquidityVault {
         interfaces::mathlib::{IMathLibDispatcherTrait, dispatcher as ekuboLibDispatcher}
     };
     use strkfarm_contracts::{
-        helpers::{
-            pow,
-            ERC20Helper,
-        },
-        components::{
-            common::CommonComp,
-            swap::{AvnuMultiRouteSwap, AvnuMultiRouteSwapImpl}
-        },
-        interfaces::oracle::IPriceOracleDispatcher,
+        components::common::CommonComp,
     };
+    use troves_clvaults::helpers::{pow, ERC20Helper};
+    use troves_clvaults::components::swap::{AvnuMultiRouteSwap, AvnuMultiRouteSwapImpl};
     use troves_clvaults::{
         cl_vault::{
             interface::{
@@ -845,13 +839,7 @@ mod ConcLiquidityVault {
             let from = swap_params.token_from_address;
             let to = swap_params.token_to_address;
             let amount_in = swap_params.token_from_amount;
-            let mut params = swap_params;
-            // min_out >= 1 so the dependency's legacy (zkLend-style) oracle path is never used;
-            // the real check is below.
-            if params.token_to_min_amount == 0 {
-                params.token_to_min_amount = 1;
-            }
-            let amount_out = params.swap(IPriceOracleDispatcher { contract_address: self.oracle.read() });
+            let amount_out = swap_params.swap();
 
             let value_in = mul_div(
                 amount_in, self._price(from), pow::ten_pow(ERC20Helper::decimals(from).into())
