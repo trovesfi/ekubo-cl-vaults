@@ -1,6 +1,12 @@
 import { ACCOUNT_NAME, deployContract, getAccount, getRpcProvider, getSwapInfo, myDeclare } from "../lib/utils";
 import { EKUBO_POSITIONS, EKUBO_CORE, EKUBO_POSITIONS_NFT, VESU_ORACLE, CL_VAULT_MIN_TIMELOCK_DELAY, wstETH, ETH, ACCESS_CONTROL, xSTRK, STRK, accountKeyMap, SUPER_ADMIN, USDC, USDT, WBTC, xWBTC, tBTC, xtBTC, xsBTC, solvBTC} from "../lib/constants";
 import { allowedTimelockClasses } from "../lib/timelock_classes";
+
+function requireEnv(name: string): string {
+    const v = process.env[name];
+    if (!v) throw new Error(`missing env ${name}`);
+    return v;
+}
 import { byteArray, Contract, num, TransactionExecutionStatus, uint256 } from "starknet";
 import { ContractAddr, EkuboCLVaultStrategies } from "@strkfarm/sdk";
 // import { executeBatch, scheduleBatch } from "../timelock/actions";
@@ -93,7 +99,6 @@ async function declareAndDeployConcLiquidityVault(
     name: string,
     symbol: string,
 ) {
-    const accessControl = ACCESS_CONTROL;
     const { class_hash } = await myDeclare("ConcLiquidityVault");
     const feeSettings = createFeeSettings(
         feeBps,        
@@ -103,8 +108,9 @@ async function declareAndDeployConcLiquidityVault(
     await deployContract("ConcLiquidityVault", class_hash, {
         name: byteArray.byteArrayFromString(name),
         symbol: byteArray.byteArrayFromString(symbol),
-        // StarkWare roles: governance admin (and security admin) — should be the timelock
-        governance_admin: process.env.CL_VAULT_GOVERNANCE_ADMIN || accessControl,
+        // StarkWare roles: governance admin (and security admin) — must be the timelock.
+        // No default: the v1 troves AccessControl contract cannot call role functions.
+        governance_admin: requireEnv("CL_VAULT_GOVERNANCE_ADMIN"),
         ekubo_positions_contract: EKUBO_POSITIONS,
         ekubo_positions_nft: EKUBO_POSITIONS_NFT,
         ekubo_core: EKUBO_CORE,
