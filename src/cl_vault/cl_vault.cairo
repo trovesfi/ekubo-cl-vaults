@@ -1,5 +1,5 @@
 #[starknet::contract]
-mod ConcLiquidityVault {
+pub mod ConcLiquidityVault {
     use starknet::{
         storage::{
             StoragePointerReadAccess, StoragePointerWriteAccess, Vec, VecTrait, MutableVecTrait, Map,
@@ -140,7 +140,7 @@ mod ConcLiquidityVault {
 
     #[event]
     #[derive(Drop, starknet::Event)]
-    enum Event {
+    pub enum Event {
         #[flat]
         ReentrancyGuardEvent: ReentrancyGuardComponent::Event,
         #[flat]
@@ -983,7 +983,7 @@ mod ConcLiquidityVault {
             let deposit = self._pool_near_oracle(pool_index);
             if deposit {
                 // @dev may leave some unused balances in the contract (redeployed on rebalance)
-                self._ekubo_deposit(this, fee0, fee1, this, pool_index, 0);
+                let _ = self._ekubo_deposit(this, fee0, fee1, this, pool_index, 0);
             }
 
             self
@@ -1423,7 +1423,7 @@ mod ConcLiquidityVault {
             receiver: ContractAddress,
             pool_index: u64,
             min_liquidity: u128
-        ) {
+        ) -> (u256, u256) {
             let pool = self.managed_pools[pool_index].read();
             let pool_key = pool.pool_key;
             let token0 = pool_key.token0;
@@ -1456,8 +1456,8 @@ mod ConcLiquidityVault {
             }
             
             // clear any unused tokens and send to receiver
-            positions_disp.clear_minimum_to_recipient(token0, 0, receiver);
-            positions_disp.clear_minimum_to_recipient(token1, 0, receiver);
+            let refund0 = positions_disp.clear_minimum_to_recipient(token0, 0, receiver);
+            let refund1 = positions_disp.clear_minimum_to_recipient(token1, 0, receiver);
 
             let final_position = self.get_position(pool_index);
             self.emit(
@@ -1470,6 +1470,7 @@ mod ConcLiquidityVault {
                     liquidity_delta: i129{ mag: (final_position.liquidity - initial_position.liquidity).try_into().unwrap(), sign: false }
                 }
             );
+            (refund0, refund1)
         }
 
         fn _collect_strat_fee(ref self: ContractState, pool: ManagedPool) -> (u256, u256) {
@@ -1544,6 +1545,8 @@ mod ConcLiquidityVault {
             // 1) per-range: the user's own pro-rata liquidity
             let mut range0: u256 = 0;
             let mut range1: u256 = 0;
+            let mut refunded0: u256 = 0;
+            let mut refunded1: u256 = 0;
             i = 0;
             while i != self.managed_pools.len() {
                 let position = *user_level_positions.positions.at(i.try_into().unwrap());
@@ -1551,7 +1554,7 @@ mod ConcLiquidityVault {
                     i += 1;
                     continue;
                 }
-                self._ekubo_deposit(
+                let (refund0, refund1) = self._ekubo_deposit(
                     caller,
                     position.amount0,
                     position.amount1,
@@ -1561,6 +1564,8 @@ mod ConcLiquidityVault {
                 );
                 range0 += position.amount0;
                 range1 += position.amount1;
+                refunded0 += refund0;
+                refunded1 += refund1;
                 i += 1;
             }
 
@@ -1574,7 +1579,12 @@ mod ConcLiquidityVault {
                 ERC20Helper::transfer_from(pool0.pool_key.token1, caller, this, idle1);
             }
 
-            (shares, user_level_positions.total_amount0, user_level_positions.total_amount1)
+            // amounts actually paid (Ekubo returns unused dust to the caller)
+            (
+                shares,
+                user_level_positions.total_amount0 - refunded0,
+                user_level_positions.total_amount1 - refunded1
+            )
         }
 
         /// @notice Shares for (at most) amount0/amount1, pro-rata to the vault's total holdings.
@@ -1606,7 +1616,11 @@ mod ConcLiquidityVault {
 
             if (total_supply == 0) {
                 return SharesInfo {
-                    shares: self._calculate_initial_shares(amount0, amount1),
+                    // what the depositor receives (DEAD_SHARES go to the vault itself)
+                    shares: {
+                        let s = self._calculate_initial_shares(amount0, amount1);
+                        if s > DEAD_SHARES { s - DEAD_SHARES } else { 0 }
+                    },
                     user_level_positions: MyPositions {
                         positions: ArrayTrait::<MyPosition>::new(),
                         total_amount0: amount0,

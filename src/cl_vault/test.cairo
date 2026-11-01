@@ -1625,7 +1625,8 @@ pub mod test_cl_vault_final {
         
         let SCALE_18 = 1_000_000_000_000_000_000_u256;
         let init1 = 2 * SCALE_18;
-        let expected_shares = (SCALE_18 * amount0 / SCALE_18 + SCALE_18 * amount1 / init1) / 2;
+        // depositor's quote excludes the 1000 dead shares minted to the vault
+        let expected_shares = (SCALE_18 * amount0 / SCALE_18 + SCALE_18 * amount1 / init1) / 2 - 1000;
         assert(shares_info.shares > 0, 'shares should be calculated');
         assert(shares_info.shares == expected_shares, 'shares should be calculated');
         assert(shares_info.vault_level_positions.positions.len() == 0, 'vault positions should be empty');

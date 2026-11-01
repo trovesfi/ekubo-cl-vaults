@@ -30,6 +30,8 @@ pub mod test_audit {
     use troves_clvaults::interfaces::IEkuboCore::Bounds as EkBounds;
     use openzeppelin::utils::serde::SerializedAppend;
     use troves_clvaults::tests::utils as test_utils;
+    use snforge_std::{EventSpyAssertionsTrait};
+    use troves_clvaults::cl_vault::cl_vault::ConcLiquidityVault;
     use openzeppelin::interfaces::timelock::{ITimelockDispatcher, ITimelockDispatcherTrait};
     use starkware_delayed_executor::delayed_executor::{
         IDelayedExecutorDispatcher, IDelayedExecutorDispatcherTrait,
@@ -1441,5 +1443,31 @@ pub mod test_audit {
         let liq = vault.total_liquidity_per_pool(0);
         vault.handle_fees(0);
         assert(vault.total_liquidity_per_pool(0) == liq, 'compounded on invalid oracle');
+    }
+
+    // preview == minted at zero supply; Deposit event == actual balance deltas
+    #[test]
+    #[fork("mainnet_4707139")]
+    fn test_preview_and_deposit_event_match_reality() {
+        let vault = single_pool_vault();
+        let alice: ContractAddress = 0xA11CE.try_into().unwrap();
+        fund(alice, 100 * E18);
+        let quote = vault.convert_to_shares(10 * E18, 10 * E18).shares;
+        let minted = deposit_as(vault, alice, 10 * E18, 10 * E18, 10 * E18);
+        assert(minted == quote, 'zero-supply preview mismatch');
+        rebalance_max(vault);
+
+        let bob: ContractAddress = 0xB0B.try_into().unwrap();
+        fund(bob, 100 * E18);
+        let b0 = bal(xstrk(), bob);
+        let b1 = bal(strk(), bob);
+        let mut spy = snforge_std::spy_events();
+        let shares = deposit_as(vault, bob, 3 * E18, 3 * E18, 100 * E18);
+        let paid0 = b0 - bal(xstrk(), bob);
+        let paid1 = b1 - bal(strk(), bob);
+        let expected = troves_clvaults::cl_vault::interface::Events::Deposit {
+            sender: bob, owner: bob, shares, amount0: paid0, amount1: paid1,
+        };
+        spy.assert_emitted(@array![(vault.contract_address, ConcLiquidityVault::Event::Deposit(expected))]);
     }
 }
