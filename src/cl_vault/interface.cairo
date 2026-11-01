@@ -273,8 +273,12 @@ pub trait IClVault<TContractState> {
 
     // v1 -> v2 only: bootstrap StarkWare roles (caller must be DEFAULT_ADMIN in the v1 AccessControl)
     fn initialize_roles_from_v1(
-        ref self: TContractState, governance_admin: ContractAddress, upgrade_delay: u64
+        ref self: TContractState,
+        governance_admin: ContractAddress,
+        upgrade_delay: u64,
+        init_values: InitValues
     );
+    fn get_init_values(self: @TContractState) -> InitValues;
     // governor (timelocked): min delay required from governor/admin timelocks (> 0)
     fn set_min_timelock_delay(ref self: TContractState, min_delay: u64);
     fn get_min_timelock_delay(self: @TContractState) -> u64;

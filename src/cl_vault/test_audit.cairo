@@ -1181,7 +1181,7 @@ pub mod test_audit {
     fn test_v1_role_bootstrap_not_callable_on_v2() {
         let vault = single_pool_vault();
         // fresh v2 vaults have no v1 access control
-        vault.initialize_roles_from_v1(get_contract_address(), 1);
+        vault.initialize_roles_from_v1(get_contract_address(), 1, InitValues { init0: E18, init1: E18 });
     }
 
     // NB: constructor `min_timelock_delay > 0` is not unit-tested: snforge 0.54 aborts the

@@ -52,7 +52,7 @@ mod V1V2Migration {
     use starknet::get_contract_address;
     use super::RoleHolders;
     use troves_clvaults::cl_vault::interface::{
-        IClVaultDispatcher, IClVaultDispatcherTrait, MaxUnusedBalances, RebalanceSettings, TimelockClass
+        IClVaultDispatcher, IClVaultDispatcherTrait, MaxUnusedBalances, RebalanceSettings, TimelockClass, InitValues
     };
     use troves_clvaults::interfaces::IEkuboCore::{Bounds, PoolKey};
     use super::IClVaultV1DispatcherTrait;
@@ -101,7 +101,8 @@ mod V1V2Migration {
             oracle: ContractAddress,
             min_timelock_delay: u64,
             role_holders: RoleHolders,
-            allowed_timelocks: Array<TimelockClass>
+            allowed_timelocks: Array<TimelockClass>,
+            init_values: InitValues
         ) {
             self._assert_owner();
 
@@ -120,7 +121,7 @@ mod V1V2Migration {
 
             // 2) bootstrap StarkWare roles with this contract as temporary governance admin,
             //    and give it the app roles it needs to configure the vault
-            new_vault_dispatcher.initialize_roles_from_v1(this, min_timelock_delay);
+            new_vault_dispatcher.initialize_roles_from_v1(this, min_timelock_delay, init_values);
             roles.register_app_role_admin(this);
             roles.register_app_governor(this);
 

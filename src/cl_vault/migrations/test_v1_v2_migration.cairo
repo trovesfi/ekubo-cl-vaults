@@ -5,7 +5,8 @@ mod test_v1_v2_migration {
         declare, ContractClassTrait, start_cheat_caller_address, stop_cheat_caller_address,
         DeclareResultTrait,
     };
-    use troves_clvaults::cl_vault::interface::{IClVaultDispatcher, IClVaultDispatcherTrait};
+    use troves_clvaults::cl_vault::interface::{IClVaultDispatcher, IClVaultDispatcherTrait, InitValues};
+    use openzeppelin::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use openzeppelin::interfaces::accesscontrol::{
         IAccessControlDispatcher, IAccessControlDispatcherTrait,
     };
@@ -77,6 +78,7 @@ mod test_v1_v2_migration {
                 86400,
                 h,
                 troves_clvaults::tests::utils::test_timelock_classes(),
+                InitValues { init0: 1_000_000_000_000_000_000, init1: 1_100_000_000_000_000_000 },
             );
         stop_cheat_caller_address(migration_address);
 
@@ -86,6 +88,12 @@ mod test_v1_v2_migration {
         assert(vault.get_managed_pools_len() == 1, 'no managed pools found');
         assert(vault.get_min_timelock_delay() == 86400, 'timelock delay');
         assert(vault.get_pool_settings(0).oracle == troves_clvaults::tests::utils::VESU_ORACLE(), 'oracle');
+        let iv = vault.get_init_values();
+        assert(iv.init0 == 1_000_000_000_000_000_000 && iv.init1 == 1_100_000_000_000_000_000, 'init values');
+        assert(
+            IERC20Dispatcher { contract_address: OLD_VAULT_ADDRESS }.balance_of(OLD_VAULT_ADDRESS) == 1000,
+            'dead shares',
+        );
         let mu = vault.get_max_unused_balances_on_rebalance();
         assert(mu.token0 == 0 && mu.token1 == 0, 'max unused');
 

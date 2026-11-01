@@ -768,7 +768,10 @@ mod ConcLiquidityVault {
         /// holds DEFAULT_ADMIN in the v1 AccessControl. Seeds GOVERNANCE_ADMIN/SECURITY_ADMIN
         /// with `governance_admin` and enables delayed upgrades with `upgrade_delay` (> 0).
         fn initialize_roles_from_v1(
-            ref self: ContractState, governance_admin: ContractAddress, upgrade_delay: u64
+            ref self: ContractState,
+            governance_admin: ContractAddress,
+            upgrade_delay: u64,
+            init_values: InitValues
         ) {
             let legacy = self.access_control.read();
             let legacy_felt: felt252 = legacy.into();
@@ -779,9 +782,17 @@ mod ConcLiquidityVault {
                 'not v1 admin'
             );
             assert(upgrade_delay > 0, 'invalid upgrade delay');
+            assert(init_values.init0 != 0 && init_values.init1 != 0, 'invalid init values');
             // reverts if already initialised
             self.roles.initialize(:governance_admin);
             self.replaceability.initialize(:upgrade_delay);
+            // v1 had neither: without init values a re-emptied vault could never be deposited
+            // into again, and without dead shares supply can return to 0
+            self.init_values.write(init_values);
+            let this = get_contract_address();
+            if self.erc20.balance_of(this) == 0 {
+                self.erc20.mint(this, DEAD_SHARES);
+            }
         }
 
         /// @notice Minimum delay the governor/admin timelock must enforce. Must stay > 0.
@@ -791,6 +802,10 @@ mod ConcLiquidityVault {
             assert(min_delay > 0, 'invalid min timelock delay');
             self.min_timelock_delay.write(min_delay);
             self.emit(MinTimelockDelayUpdated { min_delay });
+        }
+
+        fn get_init_values(self: @ContractState) -> InitValues {
+            self.init_values.read()
         }
 
         fn get_min_timelock_delay(self: @ContractState) -> u64 {

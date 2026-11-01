@@ -1,6 +1,6 @@
 use starknet::{ContractAddress, ClassHash};
 use troves_clvaults::cl_vault::migrations::v1_v2::RoleHolders;
-use troves_clvaults::cl_vault::interface::TimelockClass;
+use troves_clvaults::cl_vault::interface::{TimelockClass, InitValues};
 
 #[starknet::interface]
 pub trait IMigration<TContractState> {
@@ -11,6 +11,7 @@ pub trait IMigration<TContractState> {
         oracle: ContractAddress,
         min_timelock_delay: u64,
         role_holders: RoleHolders,
-        allowed_timelocks: Array<TimelockClass>
+        allowed_timelocks: Array<TimelockClass>,
+        init_values: InitValues
     );
 }
