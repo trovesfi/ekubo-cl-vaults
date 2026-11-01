@@ -1585,22 +1585,29 @@ mod ConcLiquidityVault {
                 if s1 < shares { shares = s1; }
             }
 
-            let mut user_positions = ArrayTrait::<MyPosition>::new();
-            let mut user_total0: u256 = 0;
-            let mut user_total1: u256 = 0;
-            i = 0;
-            while i != n_pools {
-                let range = *ranges.at(i.try_into().unwrap());
-                let liq = mul_div(range.liquidity, shares, total_supply);
-                let (a0, a1) = if liq == 0 { (0, 0) } else { self.get_amount_delta(i, liq) };
-                user_positions.append(MyPosition { liquidity: liq, amount0: a0, amount1: a1 });
-                user_total0 += a0;
-                user_total1 += a1;
-                i += 1;
+            // Rounding in the vault totals (positions are reported rounded down) is amplified by
+            // shares / supply, which is huge when the vault holds only dust (e.g. after everyone
+            // exited). If the required amounts overshoot what was offered, scale shares down
+            // proportionally and recompute (converges in 1-2 steps).
+            let (mut user_positions, mut user_total0, mut user_total1) = self
+                ._user_amounts_for_shares(@ranges, idle0, idle1, shares, total_supply);
+            let mut iter: u8 = 0;
+            while (user_total0 > amount0 || user_total1 > amount1) && shares > 0 && iter != 4 {
+                let mut scaled = shares;
+                if user_total0 > amount0 {
+                    scaled = mul_div(scaled, amount0, user_total0);
+                }
+                if user_total1 > amount1 {
+                    let s1 = mul_div(shares, amount1, user_total1);
+                    if s1 < scaled { scaled = s1; }
+                }
+                shares = if scaled > 0 { scaled - 1 } else { 0 };
+                let (p, t0, t1) = self._user_amounts_for_shares(@ranges, idle0, idle1, shares, total_supply);
+                user_positions = p;
+                user_total0 = t0;
+                user_total1 = t1;
+                iter += 1;
             }
-            // idle share, rounded up (in the vault's favour)
-            user_total0 += ceil_div(idle0 * shares, total_supply);
-            user_total1 += ceil_div(idle1 * shares, total_supply);
 
             SharesInfo {
                 shares,
@@ -1611,6 +1618,34 @@ mod ConcLiquidityVault {
                     positions: ranges, total_amount0: vault_total0, total_amount1: vault_total1,
                 },
             }
+        }
+
+        /// Tokens a depositor must provide for `shares`: per range the pro-rata liquidity (amounts
+        /// rounded up by Ekubo) plus the pro-rata idle balances (rounded up).
+        fn _user_amounts_for_shares(
+            self: @ContractState,
+            ranges: @Array<MyPosition>,
+            idle0: u256,
+            idle1: u256,
+            shares: u256,
+            total_supply: u256
+        ) -> (Array<MyPosition>, u256, u256) {
+            let mut user_positions = ArrayTrait::<MyPosition>::new();
+            let mut user_total0: u256 = 0;
+            let mut user_total1: u256 = 0;
+            let mut i: u64 = 0;
+            while i != self.managed_pools.len() {
+                let range = *ranges.at(i.try_into().unwrap());
+                let liq = mul_div(range.liquidity, shares, total_supply);
+                let (a0, a1) = if liq == 0 { (0, 0) } else { self.get_amount_delta(i, liq) };
+                user_positions.append(MyPosition { liquidity: liq, amount0: a0, amount1: a1 });
+                user_total0 += a0;
+                user_total1 += a1;
+                i += 1;
+            }
+            user_total0 += ceil_div(idle0 * shares, total_supply);
+            user_total1 += ceil_div(idle1 * shares, total_supply);
+            (user_positions, user_total0, user_total1)
         }
 
         fn _convert_to_liquidity(self: @ContractState, shares: u256, pool_index: u64, supply: u256) -> u256 {
