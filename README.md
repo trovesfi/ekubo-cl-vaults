@@ -10,6 +10,7 @@ Toolchain is pinned in `.tool-versions` (Scarb 2.18.0, Starknet Foundry 0.63.0).
 scarb --release build                                   # artifacts in target/release
 (cd scripts/ci && npm ci) && node scripts/ci/class_hashes.mjs --check   # reproducible class hashes
 snforge test --max-n-steps 30000000                     # fork tests (see below)
+pip install -r formal/requirements.txt && python3 formal/share_math.py   # Z3 proofs
 ```
 
 - `deployments/class-hashes.json` holds the Sierra and compiled class hashes of the release build

@@ -25,6 +25,15 @@ jobs:
           npm ci --prefix scripts/ci --no-audit --no-fund
           node scripts/ci/class_hashes.mjs --check
 
+  formal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Z3 proofs (share math, i129)
+        run: |
+          python3 -m pip install --quiet -r formal/requirements.txt
+          python3 formal/share_math.py
+
   fork-tests:
     runs-on: ubuntu-latest
     env:

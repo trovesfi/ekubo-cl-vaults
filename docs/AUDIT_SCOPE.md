@@ -40,6 +40,11 @@ replaceability, `MultiExecutor`), Vesu v2 oracle class (deployed as a Troves-own
    `max_slippage_bps`).
 5. Every user can always exit (withdraw is not pausable; empty ranges are skipped).
 
+Formal (Z3, `formal/share_math.py`, run in CI): for every component (range liquidity at rate a/b with Ekubo's
+rounding, idle balances) and any share amount, deposit->withdraw is never profitable, deposit and withdraw never
+dilute other holders, and claims never exceed holdings; plus `tick_distance`, `i129` ordering and `i129` storage
+packing. This proves the arithmetic model, not the compiled Sierra.
+
 Tests: `src/cl_vault/test_audit.cairo` (finding regressions + guard-rails + governance),
 `src/cl_vault/test_invariants.cairo` (fuzz, stateful invariants, sandwich), `src/cl_vault/test.cairo` (legacy
 functional), `src/cl_vault/migrations/test_v1_v2_migration.cairo` (live v1 vault).
