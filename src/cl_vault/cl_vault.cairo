@@ -258,6 +258,15 @@ pub mod ConcLiquidityVault {
         u256 { low: q.limb0, high: q.limb1 }
     }
 
+    /// ceil(a * b / c) with a 512-bit intermediate; reverts if the result exceeds u256.
+    fn mul_div_ceil(a: u256, b: u256, c: u256) -> u256 {
+        let prod: core::integer::u512 = core::num::traits::WideMul::wide_mul(a, b);
+        let (q, r) = core::integer::u512_safe_div_rem_by_u256(prod, c.try_into().expect('mul_div by zero'));
+        assert(q.limb2 == 0 && q.limb3 == 0, 'mul_div overflow');
+        let floor = u256 { low: q.limb0, high: q.limb1 };
+        if r == 0 { floor } else { floor + 1 }
+    }
+
     fn ceil_div(a: u256, b: u256) -> u256 {
         if a == 0 { 0 } else { (a - 1) / b + 1 }
     }
@@ -1700,7 +1709,9 @@ pub mod ConcLiquidityVault {
             let mut i: u64 = 0;
             while i != self.managed_pools.len() {
                 let range = *ranges.at(i.try_into().unwrap());
-                let liq = mul_div(range.liquidity, shares, total_supply);
+                // rounded UP: a depositor never gets shares for less liquidity than their pro-rata
+                // part (formal/share_math.py P2; floor allowed free shares when L*s < S)
+                let liq = mul_div_ceil(range.liquidity, shares, total_supply);
                 let (a0, a1) = if liq == 0 { (0, 0) } else { self.get_amount_delta(i, liq) };
                 user_positions.append(MyPosition { liquidity: liq, amount0: a0, amount1: a1 });
                 user_total0 += a0;

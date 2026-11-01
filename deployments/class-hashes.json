@@ -3,8 +3,8 @@
   "profile": "release",
   "contracts": {
     "ConcLiquidityVault": {
-      "class_hash": "0x49b59a082473154e044128bf6602c722229edfa80f7dd77fb906bd4026e3855",
-      "compiled_class_hash": "0x3ad8ed7d259319f5400fff3d9bd17b9231b366d845ed4eb602c0fe4df16ac94"
+      "class_hash": "0x68182055ddddc6702061548cbc972ea7599c87447df82c232fd86e02222cdc2",
+      "compiled_class_hash": "0x686ec93c08690e006ea61a8e1dcda8d745dbde6c46a8c781d350e6cb15167c9"
     },
     "V1V2Migration": {
       "class_hash": "0x61e316bc282a2ecf95cd0695015d9aaea84d714b64c9a61028cdedd16bf1aa4",
